@@ -57,7 +57,25 @@ impl Cache {
 
     pub fn get_cache_path(&self, packages_dir: &Path) -> PathBuf {
         let cache_key = self.compute_cache_key(packages_dir);
-        self.cache_dir.join(format!("scan_{}.bin", cache_key))
+        let filename = format!("scan_{}.bin", cache_key);
+        let cache_path = self.cache_dir.join(&filename);
+
+        if let Ok(canonical_cache_dir) = self.cache_dir.canonicalize() {
+            if let Ok(canonical_cache_path) = cache_path.canonicalize() {
+                if canonical_cache_path.starts_with(&canonical_cache_dir) {
+                    return cache_path;
+                }
+            } else if let Some(parent) = cache_path.parent() {
+                if let Ok(canonical_parent) = parent.canonicalize() {
+                    let canonical_cache_path = canonical_parent.join(&filename);
+                    if canonical_cache_path.starts_with(&canonical_cache_dir) {
+                        return cache_path;
+                    }
+                }
+            }
+        }
+
+        cache_path
     }
 
     pub fn load(&mut self, packages_dir: &Path) -> Result<Option<Vec<Package>>> {

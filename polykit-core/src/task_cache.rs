@@ -45,7 +45,32 @@ impl TaskCache {
         package_name.hash(&mut hasher);
         task_name.hash(&mut hasher);
         command.hash(&mut hasher);
-        format!("task_{}_{}_{:x}", package_name, task_name, hasher.finish())
+
+        let safe_package = package_name.replace(['/', '\\', '.', ':'], "_");
+        let safe_task = task_name.replace(['/', '\\', '.', ':'], "_");
+        format!("task_{}_{}_{:x}", safe_package, safe_task, hasher.finish())
+    }
+
+    fn get_safe_cache_path(&self, cache_key: &str) -> Result<PathBuf> {
+        let filename = format!("{}.bin", cache_key);
+        let cache_path = self.cache_dir.join(&filename);
+
+        if let Ok(canonical_cache_dir) = self.cache_dir.canonicalize() {
+            if let Ok(canonical_cache_path) = cache_path
+                .canonicalize()
+                .or_else(|_| self.cache_dir.canonicalize().map(|dir| dir.join(&filename)))
+            {
+                if !canonical_cache_path.starts_with(&canonical_cache_dir) {
+                    return Err(Error::Adapter {
+                        package: "task-cache".to_string(),
+                        message: "Invalid cache path detected".to_string(),
+                    });
+                }
+                return Ok(cache_path);
+            }
+        }
+
+        Ok(cache_path)
     }
 
     /// Retrieves a cached task result if available.
@@ -56,7 +81,7 @@ impl TaskCache {
         command: &str,
     ) -> Result<Option<TaskResult>> {
         let cache_key = Self::cache_key(package_name, task_name, command);
-        let cache_path = self.cache_dir.join(format!("{}.bin", cache_key));
+        let cache_path = self.get_safe_cache_path(&cache_key)?;
 
         if !cache_path.exists() {
             return Ok(None);
@@ -76,6 +101,14 @@ impl TaskCache {
             || entry.task_name != task_name
             || entry.command != command
         {
+            return Ok(None);
+        }
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        command.hash(&mut hasher);
+        if hasher.finish() != entry.command_hash {
             return Ok(None);
         }
 
@@ -103,7 +136,7 @@ impl TaskCache {
         fs::create_dir_all(&self.cache_dir).map_err(Error::Io)?;
 
         let cache_key = Self::cache_key(package_name, task_name, command);
-        let cache_path = self.cache_dir.join(format!("{}.bin", cache_key));
+        let cache_path = self.get_safe_cache_path(&cache_key)?;
 
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};

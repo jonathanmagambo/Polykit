@@ -27,12 +27,11 @@ fn run_task_with_progress(
     };
 
     let pb = ProgressBar::new(packages_to_run as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .expect("Progress bar template is valid")
-            .progress_chars("█▉▊▋▌▍▎▏  "),
-    );
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+        .unwrap_or_else(|_| ProgressStyle::default_bar())
+        .progress_chars("█▉▊▋▌▍▎▏  ");
+    pb.set_style(style);
     pb.set_message(progress_msg.to_string());
 
     let runner = TaskRunner::new(&packages_dir, graph).with_max_parallel(parallel);

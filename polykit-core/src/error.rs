@@ -6,19 +6,20 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("IO error: {0}")]
+    #[error("IO error")]
     Io(#[from] std::io::Error),
 
-    #[error("TOML parse error in {context}: {error}")]
+    #[error("TOML parse error in {context}")]
     Toml {
+        #[source]
         error: toml::de::Error,
         context: String,
     },
 
-    #[error("TOML serialize error: {0}")]
+    #[error("TOML serialize error")]
     TomlSerialize(#[from] toml::ser::Error),
 
-    #[error("Package not found: {name}. Available packages: {available}")]
+    #[error("Package not found: {name}")]
     PackageNotFound { name: String, available: String },
 
     #[error("Invalid package name: {0}")]
@@ -30,7 +31,7 @@ pub enum Error {
     #[error("Circular dependency detected: {0}. Use 'polykit graph' to visualize dependencies.")]
     CircularDependency(String),
 
-    #[error("Config file not found: {0}. Expected 'polykit.toml' in package directory.")]
+    #[error("Config file not found. Expected 'polykit.toml' in package directory.")]
     ConfigNotFound(PathBuf),
 
     #[error("Adapter error for {package}: {message}")]
@@ -39,7 +40,7 @@ pub enum Error {
     #[error("Graph error: {0}")]
     Graph(String),
 
-    #[error("Task execution failed for {package}::{task}: {message}")]
+    #[error("Task execution failed for {package}::{task}")]
     TaskExecution {
         package: String,
         task: String,
@@ -49,7 +50,7 @@ pub enum Error {
     #[error("Release error: {0}")]
     Release(String),
 
-    #[error("Mutex lock error: {0}")]
+    #[error("Mutex lock error")]
     MutexLock(String),
 }
 

@@ -167,6 +167,18 @@ impl Scanner {
                 let config_content = std::fs::read_to_string(&config_path)?;
                 let config: Config = toml::from_str(&config_content)?;
 
+                crate::command_validator::CommandValidator::validate_identifier(
+                    &config.name,
+                    "Package name",
+                )?;
+
+                for dep_name in &config.deps.internal {
+                    crate::command_validator::CommandValidator::validate_identifier(
+                        dep_name,
+                        "Dependency name",
+                    )?;
+                }
+
                 let language = config.parse_language()?;
                 let relative_path = package_path
                     .strip_prefix(&self.packages_dir)
@@ -175,9 +187,20 @@ impl Scanner {
 
                 let mut package_tasks = config.to_tasks();
 
+                for task in &package_tasks {
+                    crate::command_validator::CommandValidator::validate_identifier(
+                        &task.name,
+                        "Task name",
+                    )?;
+                }
+
                 if let Some(ref workspace_config) = self.workspace_config {
                     let workspace_tasks = workspace_config.to_tasks();
                     for workspace_task in workspace_tasks {
+                        crate::command_validator::CommandValidator::validate_identifier(
+                            &workspace_task.name,
+                            "Workspace task name",
+                        )?;
                         if !package_tasks.iter().any(|t| t.name == workspace_task.name) {
                             package_tasks.push(workspace_task);
                         }

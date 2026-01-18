@@ -37,6 +37,7 @@ impl ChangeDetector {
         base: Option<&str>,
     ) -> Result<HashSet<String>> {
         let base = base.unwrap_or("HEAD");
+        Self::validate_git_ref(base)?;
         let changed_files = Self::git_diff(base)?;
         Self::detect_affected_packages(graph, &changed_files, packages_dir)
     }
@@ -64,6 +65,38 @@ impl ChangeDetector {
 
     fn file_to_package(file_path: &Path, packages_dir: &Path) -> Option<String> {
         path_utils::file_to_package(file_path, packages_dir)
+    }
+
+    fn validate_git_ref(git_ref: &str) -> Result<()> {
+        if git_ref.is_empty() {
+            return Err(Error::Adapter {
+                package: "change-detection".to_string(),
+                message: "Git reference cannot be empty".to_string(),
+            });
+        }
+
+        if git_ref.len() > 256 {
+            return Err(Error::Adapter {
+                package: "change-detection".to_string(),
+                message: "Git reference exceeds maximum length".to_string(),
+            });
+        }
+
+        if git_ref.contains('\0') || git_ref.contains('\n') || git_ref.contains('\r') {
+            return Err(Error::Adapter {
+                package: "change-detection".to_string(),
+                message: "Git reference contains invalid characters".to_string(),
+            });
+        }
+
+        if git_ref.starts_with('-') {
+            return Err(Error::Adapter {
+                package: "change-detection".to_string(),
+                message: "Git reference cannot start with '-'".to_string(),
+            });
+        }
+
+        Ok(())
     }
 
     fn git_diff(base: &str) -> Result<Vec<PathBuf>> {
