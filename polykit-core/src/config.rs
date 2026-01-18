@@ -4,6 +4,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::package::{Language, Task};
+use crate::remote_cache::RemoteCacheConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -229,6 +230,9 @@ pub struct WorkspaceConfig {
     /// Workspace-level tasks that apply to all packages.
     #[serde(default, deserialize_with = "deserialize_tasks")]
     pub tasks: FxHashMap<String, TaskValue>,
+    /// Remote cache configuration.
+    #[serde(default)]
+    pub remote_cache: Option<RemoteCacheConfig>,
 }
 
 impl Config {

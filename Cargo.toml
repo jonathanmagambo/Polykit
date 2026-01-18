@@ -3,6 +3,7 @@ members = [
     "polykit",
     "polykit-core",
     "polykit-adapters",
+    "polykit-cache",
 ]
 resolver = "2"
 
@@ -45,6 +46,15 @@ mimalloc = { version = "0.1", default-features = false }
 zstd = "0.13"
 memmap2 = "0.9"
 criterion = { version = "0.5", features = ["html_reports"] }
+sha2 = "0.10"
+reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }
+tar = "0.4"
+async-tar = "0.4"
+async-trait = "0.1"
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["compression-gzip", "trace"] }
+uuid = { version = "1.0", features = ["v4"] }
 
 [profile.release]
 opt-level = 3

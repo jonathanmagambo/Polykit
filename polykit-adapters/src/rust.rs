@@ -3,7 +3,7 @@ use std::path::Path;
 
 use polykit_core::adapter::{LangMetadata, LanguageAdapter};
 use polykit_core::error::{Error, Result};
-use regex::Regex;
+use toml::Value;
 
 pub struct RustAdapter;
 
@@ -25,14 +25,22 @@ impl LanguageAdapter for RustAdapter {
                     package: path.display().to_string(),
                     message: format!("Invalid package path: {}", path.display()),
                 })?;
-        let content = fs::read_to_string(&cargo_toml_path).map_err(|_| Error::Adapter {
+        let content = fs::read_to_string(&cargo_toml_path).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("Cargo.toml not found in {}", path.display()),
+            message: format!(
+                "Failed to read Cargo.toml at {}: {}",
+                cargo_toml_path.display(),
+                e
+            ),
         })?;
 
-        let toml: toml::Value = content.parse().map_err(|e| Error::Adapter {
+        let toml: Value = content.parse().map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("Failed to parse Cargo.toml: {}", e),
+            message: format!(
+                "Failed to parse Cargo.toml at {}: {}. File may be malformed.",
+                cargo_toml_path.display(),
+                e
+            ),
         })?;
 
         let version = toml
@@ -45,6 +53,15 @@ impl LanguageAdapter for RustAdapter {
     }
 
     fn bump_version(&self, path: &Path, new_version: &str) -> Result<()> {
+        // Validate version format
+        semver::Version::parse(new_version).map_err(|e| Error::Adapter {
+            package: path.display().to_string(),
+            message: format!(
+                "Invalid version format '{}': {}. Expected semver format (e.g., 1.2.3)",
+                new_version, e
+            ),
+        })?;
+
         let cargo_toml_path = path.join("Cargo.toml");
         let package_name =
             path.file_name()
@@ -53,20 +70,47 @@ impl LanguageAdapter for RustAdapter {
                     package: path.display().to_string(),
                     message: format!("Invalid package path: {}", path.display()),
                 })?;
-        let content = fs::read_to_string(&cargo_toml_path).map_err(|_| Error::Adapter {
+        let content = fs::read_to_string(&cargo_toml_path).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("Cargo.toml not found in {}", path.display()),
+            message: format!(
+                "Failed to read Cargo.toml at {}: {}",
+                cargo_toml_path.display(),
+                e
+            ),
         })?;
 
-        let version_re =
-            Regex::new(r#"(?m)^version\s*=\s*"[^"]+""#).map_err(|e| Error::Adapter {
+        let mut toml: Value = content.parse().map_err(|e| Error::Adapter {
+            package: package_name.to_string(),
+            message: format!(
+                "Failed to parse Cargo.toml at {}: {}. File may be malformed.",
+                cargo_toml_path.display(),
+                e
+            ),
+        })?;
+
+        // Update version in package.version
+        if let Some(package) = toml.get_mut("package").and_then(|p| p.as_table_mut()) {
+            package.insert(
+                "version".to_string(),
+                Value::String(new_version.to_string()),
+            );
+        } else {
+            return Err(Error::Adapter {
                 package: package_name.to_string(),
-                message: format!("Failed to create regex: {}", e),
-            })?;
+                message: format!(
+                    "Could not find 'package.version' in Cargo.toml at {}. \
+                    Ensure the file contains a [package] section with a version field.",
+                    cargo_toml_path.display()
+                ),
+            });
+        }
 
-        let updated = version_re.replace(&content, format!(r#"version = "{}""#, new_version));
+        let updated_content = toml::to_string_pretty(&toml).map_err(|e| Error::Adapter {
+            package: package_name.to_string(),
+            message: format!("Failed to serialize Cargo.toml: {}", e),
+        })?;
 
-        fs::write(&cargo_toml_path, updated.as_ref()).map_err(|e| Error::Adapter {
+        fs::write(&cargo_toml_path, updated_content).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
             message: format!("Failed to write Cargo.toml: {}", e),
         })?;

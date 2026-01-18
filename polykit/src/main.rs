@@ -35,6 +35,18 @@ struct Cli {
 
     #[arg(long, action)]
     show_cache_stats: bool,
+
+    #[arg(long)]
+    remote_cache: Option<String>,
+
+    #[arg(long)]
+    remote_cache_url: Option<String>,
+
+    #[arg(long, action)]
+    remote_cache_readonly: bool,
+
+    #[arg(long, action)]
+    no_remote_cache: bool,
 }
 
 #[derive(Subcommand)]
@@ -162,6 +174,9 @@ fn main() -> Result<()> {
                 cli.no_cache,
                 cli.no_stream,
                 cli.show_cache_stats,
+                cli.remote_cache_url,
+                cli.remote_cache_readonly,
+                cli.no_remote_cache,
             )?
         }
         Commands::Test {
@@ -178,6 +193,9 @@ fn main() -> Result<()> {
                 cli.no_cache,
                 cli.no_stream,
                 cli.show_cache_stats,
+                cli.remote_cache_url,
+                cli.remote_cache_readonly,
+                cli.no_remote_cache,
             )?
         }
         Commands::Release {

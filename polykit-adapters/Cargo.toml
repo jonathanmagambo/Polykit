@@ -13,3 +13,10 @@ serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
 regex.workspace = true
+git2.workspace = true
+semver.workspace = true
+tokio.workspace = true
+once_cell = "1.19"
+
+[dev-dependencies]
+tempfile.workspace = true

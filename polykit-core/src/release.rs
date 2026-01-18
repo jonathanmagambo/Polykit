@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use rayon::prelude::*;
 use semver::Version;
 
 use crate::adapter::LanguageAdapter;
@@ -113,22 +114,46 @@ impl ReleaseEngine {
                 available: available_str.clone(),
             })?;
 
+        // Collect all packages and their paths for parallel metadata reading
+        let packages_with_paths: Vec<(String, PathBuf, crate::package::Language)> = order
+            .iter()
+            .filter_map(|name| {
+                self.graph.get_package(name).map(|pkg| {
+                    (
+                        name.clone(),
+                        self.packages_dir.join(&pkg.path),
+                        pkg.language,
+                    )
+                })
+            })
+            .collect();
+
+        // Read all metadata in parallel
+        let metadata_results: Result<Vec<(String, Option<String>)>> = packages_with_paths
+            .into_par_iter()
+            .map(|(name, path, language)| {
+                let adapter = (self.adapter_getter)(&language);
+                let metadata = adapter.read_metadata(&path)?;
+                Ok((name, metadata.version))
+            })
+            .collect();
+
+        let metadata_map: HashMap<String, Option<String>> =
+            metadata_results?.into_iter().collect::<HashMap<_, _>>();
+
         let mut versions = HashMap::new();
 
+        // Process packages sequentially for version calculations (depends on previous results)
         for (idx, package_name) in order.iter().enumerate() {
-            let package =
-                self.graph
-                    .get_package(package_name)
+            let old_version =
+                metadata_map
+                    .get(package_name)
+                    .cloned()
                     .ok_or_else(|| Error::PackageNotFound {
                         name: package_name.clone(),
                         available: available_str.clone(),
                     })?;
 
-            let adapter = (self.adapter_getter)(&package.language);
-            let package_path = self.packages_dir.join(&package.path);
-            let metadata = adapter.read_metadata(&package_path)?;
-
-            let old_version = metadata.version.clone();
             let new_version = if idx == target_idx {
                 self.bump_version(&old_version, bump_type)?
             } else if idx < target_idx {

@@ -7,10 +7,33 @@ use std::time::Instant;
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
-use polykit_core::{DependencyGraph, TaskRunner};
+
+use polykit_core::{DependencyGraph, RemoteCache, RemoteCacheConfig, TaskRunner};
 
 use super::{create_scanner, print_cache_stats};
 
+fn create_remote_cache(
+    url: Option<String>,
+    read_only: bool,
+    disabled: bool,
+) -> Result<Option<Arc<RemoteCache>>> {
+    if disabled || url.is_none() {
+        return Ok(None);
+    }
+
+    let url = url.unwrap();
+    if url.is_empty() {
+        return Ok(None);
+    }
+
+    let config = RemoteCacheConfig::new(url)
+        .read_only(read_only);
+
+    let remote_cache = RemoteCache::from_config(config)?;
+    Ok(Some(Arc::new(remote_cache)))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_task_with_progress(
     packages_dir: PathBuf,
     task_name: &str,
@@ -19,6 +42,7 @@ fn run_task_with_progress(
     no_stream: bool,
     graph: DependencyGraph,
     progress_msg: &str,
+    remote_cache: Option<Arc<RemoteCache>>,
 ) -> Result<Vec<polykit_core::TaskResult>> {
     let packages_to_run = if let Some(names) = packages_opt {
         names.len()
@@ -34,7 +58,10 @@ fn run_task_with_progress(
     pb.set_style(style);
     pb.set_message(progress_msg.to_string());
 
-    let runner = TaskRunner::new(&packages_dir, graph).with_max_parallel(parallel);
+    let mut runner = TaskRunner::new(&packages_dir, graph).with_max_parallel(parallel);
+    if let Some(ref rc) = remote_cache {
+        runner = runner.with_remote_cache(Arc::clone(rc));
+    }
 
     if no_stream {
         let results = runner.run_task(task_name, packages_opt)?;
@@ -115,6 +142,7 @@ fn print_task_results(
     failed
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn cmd_build(
     packages_dir: PathBuf,
     packages: Vec<String>,
@@ -123,6 +151,9 @@ pub fn cmd_build(
     no_cache: bool,
     no_stream: bool,
     show_cache_stats: bool,
+    remote_cache_url: Option<String>,
+    remote_cache_readonly: bool,
+    no_remote_cache: bool,
 ) -> Result<()> {
     let start = Instant::now();
     let mut scanner = create_scanner(&packages_dir, no_cache);
@@ -144,6 +175,8 @@ pub fn cmd_build(
     println!("{}", "[Building packages]".bold().cyan());
     println!();
 
+    let remote_cache = create_remote_cache(remote_cache_url, remote_cache_readonly, no_remote_cache)?;
+
     let results = run_task_with_progress(
         packages_dir,
         "build",
@@ -152,6 +185,7 @@ pub fn cmd_build(
         no_stream,
         graph,
         "Building...",
+        remote_cache,
     )?;
 
     let failed = print_task_results(
@@ -178,6 +212,7 @@ pub fn cmd_build(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn cmd_test(
     packages_dir: PathBuf,
     packages: Vec<String>,
@@ -186,6 +221,9 @@ pub fn cmd_test(
     no_cache: bool,
     no_stream: bool,
     show_cache_stats: bool,
+    remote_cache_url: Option<String>,
+    remote_cache_readonly: bool,
+    no_remote_cache: bool,
 ) -> Result<()> {
     let start = Instant::now();
     let mut scanner = create_scanner(&packages_dir, no_cache);
@@ -207,6 +245,8 @@ pub fn cmd_test(
     println!("{}", "[Running tests]".bold().cyan());
     println!();
 
+    let remote_cache = create_remote_cache(remote_cache_url, remote_cache_readonly, no_remote_cache)?;
+
     let results = run_task_with_progress(
         packages_dir,
         "test",
@@ -215,6 +255,7 @@ pub fn cmd_test(
         no_stream,
         graph,
         "Testing...",
+        remote_cache,
     )?;
 
     let failed = print_task_results(

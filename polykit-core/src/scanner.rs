@@ -51,6 +51,7 @@ impl Scanner {
                         .map(|i| i as usize),
                     workspace_config_path: Some(workspace_toml),
                     tasks: FxHashMap::default(),
+                    remote_cache: None,
                 };
 
                 if let Some(tasks_table) = workspace_table.get("tasks").and_then(|v| v.as_table()) {

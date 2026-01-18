@@ -33,7 +33,10 @@ pub use metrics::ExecutionMetrics;
 pub use package::{Language, Package, Task};
 pub use release::{BumpType, ReleaseEngine, ReleasePackage, ReleasePlan};
 pub use release_reporter::ReleaseReporter;
-pub use remote_cache::{RemoteCache, RemoteCacheBackend, RemoteCacheConfig};
+pub use remote_cache::{
+    Artifact, ArtifactVerifier, CacheKey, CacheKeyBuilder, RemoteCache, RemoteCacheBackend,
+    RemoteCacheConfig,
+};
 pub use runner::{TaskResult, TaskRunner};
 pub use scanner::Scanner;
 pub use streaming::StreamingTask;

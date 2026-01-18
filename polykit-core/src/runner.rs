@@ -6,10 +6,13 @@ use std::process::{Command, Stdio};
 
 use rayon::prelude::*;
 
+use std::sync::Arc;
+
 use crate::command_validator::CommandValidator;
 use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
 use crate::package::Package;
+use crate::remote_cache::{Artifact, ArtifactVerifier, RemoteCache};
 use crate::simd_utils;
 use crate::streaming::StreamingTask;
 use crate::task_cache::TaskCache;
@@ -21,6 +24,7 @@ pub struct TaskRunner {
     max_parallel: Option<usize>,
     command_validator: CommandValidator,
     task_cache: Option<TaskCache>,
+    remote_cache: Option<Arc<RemoteCache>>,
 }
 
 impl TaskRunner {
@@ -31,6 +35,7 @@ impl TaskRunner {
             max_parallel: None,
             command_validator: CommandValidator::new(),
             task_cache: None,
+            remote_cache: None,
         }
     }
 
@@ -46,6 +51,11 @@ impl TaskRunner {
 
     pub fn with_max_parallel(mut self, max_parallel: Option<usize>) -> Self {
         self.max_parallel = max_parallel;
+        self
+    }
+
+    pub fn with_remote_cache(mut self, remote_cache: Arc<RemoteCache>) -> Self {
+        self.remote_cache = Some(remote_cache);
         self
     }
 
@@ -356,6 +366,22 @@ impl TaskRunner {
             }
         })?;
 
+        let package_path = self.packages_dir.join(&package.path);
+
+        if let Some(ref remote_cache) = self.remote_cache {
+            match self.check_remote_cache(
+                remote_cache,
+                package,
+                task_name,
+                &task.command,
+                &package_path,
+            ) {
+                Ok(Some(cached_result)) => return Ok(cached_result),
+                Ok(None) => {}
+                Err(_) => {}
+            }
+        }
+
         if let Some(ref cache) = self.task_cache {
             if let Some(cached_result) = cache.get(&package.name, task_name, &task.command)? {
                 return Ok(cached_result);
@@ -364,7 +390,6 @@ impl TaskRunner {
 
         self.command_validator.validate(&task.command)?;
 
-        let package_path = self.packages_dir.join(&package.path);
         let output = Command::new("sh")
             .arg("-c")
             .arg(&task.command)
@@ -398,11 +423,146 @@ impl TaskRunner {
             stderr,
         };
 
+        // Store in local cache
         if let Some(ref cache) = self.task_cache {
             let _ = cache.put(&package.name, task_name, &task.command, &result);
         }
 
+        if result.success {
+            if let Some(ref remote_cache) = self.remote_cache {
+                let _ = self.upload_to_remote_cache(
+                    remote_cache,
+                    package,
+                    task_name,
+                    &task.command,
+                    &package_path,
+                    &result,
+                );
+            }
+        }
+
         Ok(result)
+    }
+
+    /// Checks remote cache for a task result.
+    ///
+    /// Returns `Ok(Some(result))` if found, `Ok(None)` if not found, or `Err` on error.
+    fn check_remote_cache(
+        &self,
+        remote_cache: &RemoteCache,
+        package: &Package,
+        task_name: &str,
+        command: &str,
+        package_path: &std::path::Path,
+    ) -> Result<Option<TaskResult>> {
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle,
+            Err(_) => {
+                // Create a new runtime if we're not in an async context
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| Error::Adapter {
+                        package: "remote-cache".to_string(),
+                        message: format!("Failed to create tokio runtime: {}", e),
+                    })?
+                    .handle()
+                    .clone()
+            }
+        };
+
+        // Build cache key
+        let cache_key = rt.block_on(remote_cache.build_cache_key(
+            package,
+            task_name,
+            command,
+            &self.graph,
+            package_path,
+        ))?;
+
+        // Fetch artifact
+        let artifact_opt = rt.block_on(remote_cache.fetch_artifact(&cache_key))?;
+
+        if let Some(artifact) = artifact_opt {
+            if ArtifactVerifier::verify(&artifact, None).is_err() {
+                return Err(Error::Adapter {
+                    package: "remote-cache".to_string(),
+                    message: "Artifact integrity verification failed".to_string(),
+                });
+            }
+
+            // Extract outputs
+            artifact.extract_outputs(package_path)?;
+
+            // Return cached result
+            Ok(Some(TaskResult {
+                package_name: package.name.clone(),
+                task_name: task_name.to_string(),
+                success: true,
+                stdout: String::new(), // Outputs are in files, not stdout
+                stderr: String::new(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Uploads task result to remote cache.
+    fn upload_to_remote_cache(
+        &self,
+        remote_cache: &RemoteCache,
+        package: &Package,
+        task_name: &str,
+        command: &str,
+        package_path: &std::path::Path,
+        result: &TaskResult,
+    ) -> Result<()> {
+        use std::collections::BTreeMap;
+
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle,
+            Err(_) => {
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| Error::Adapter {
+                        package: "remote-cache".to_string(),
+                        message: format!("Failed to create tokio runtime: {}", e),
+                    })?
+                    .handle()
+                    .clone()
+            }
+        };
+
+        // Build cache key
+        let cache_key = rt.block_on(remote_cache.build_cache_key(
+            package,
+            task_name,
+            command,
+            &self.graph,
+            package_path,
+        ))?;
+
+        // Collect output files (simplified - in practice, we'd track what files were created)
+        // For now, we'll create a minimal artifact with stdout/stderr
+        let mut output_files = BTreeMap::new();
+        output_files.insert(
+            PathBuf::from("stdout.txt"),
+            result.stdout.as_bytes().to_vec(),
+        );
+        output_files.insert(
+            PathBuf::from("stderr.txt"),
+            result.stderr.as_bytes().to_vec(),
+        );
+
+        // Create artifact
+        let artifact = Artifact::new(
+            package.name.clone(),
+            task_name.to_string(),
+            command.to_string(),
+            cache_key.as_string(),
+            output_files,
+        )?;
+
+        let _ = rt.block_on(remote_cache.upload_artifact(&cache_key, &artifact));
+
+        Ok(())
     }
 
     fn execute_task(&self, package: &Package, task_name: &str) -> Result<TaskResult> {

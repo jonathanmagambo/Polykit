@@ -98,6 +98,36 @@ Polykit automatically:
 
 ## Common Workflows
 
+### Remote Caching
+
+Share build artifacts across machines and team members using Polykit's self-hosted remote cache:
+
+```bash
+# Start the cache server (in one terminal)
+polykit-cache --storage-dir ./cache --bind 0.0.0.0 --port 8080
+
+# Use remote cache in builds (in another terminal)
+polykit build --remote-cache-url http://localhost:8080
+```
+
+Or configure in `polykit.toml`:
+
+```toml
+[workspace]
+cache_dir = ".polykit/cache"
+default_parallel = 4
+
+[remote_cache]
+url = "http://localhost:8080"
+```
+
+**Benefits:**
+- Share build artifacts across your team
+- Speed up CI pipelines by reusing cached builds
+- Avoid rebuilding unchanged packages
+
+See [Remote Cache Guide](./REMOTE_CACHE.md) for detailed setup and deployment instructions.
+
 ### Change Detection
 
 Find which packages are affected by file changes. This is useful for CI/CD to only build/test what changed:
@@ -176,5 +206,6 @@ default_parallel = 4
 
 - `cache_dir` - Directory for caching scan results (speeds up subsequent scans)
 - `default_parallel` - Default number of parallel workers for build/test commands
+- `[remote_cache]` - Remote cache configuration (see [Remote Cache Guide](./REMOTE_CACHE.md))
 
 See `docs/EXAMPLES.md` for more examples.

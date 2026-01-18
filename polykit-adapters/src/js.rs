@@ -3,7 +3,6 @@ use std::path::Path;
 
 use polykit_core::adapter::{LangMetadata, LanguageAdapter};
 use polykit_core::error::{Error, Result};
-use regex::Regex;
 use serde_json::Value;
 
 pub struct JsAdapter;
@@ -26,14 +25,22 @@ impl LanguageAdapter for JsAdapter {
                     package: path.display().to_string(),
                     message: format!("Invalid package path: {}", path.display()),
                 })?;
-        let content = fs::read_to_string(&package_json_path).map_err(|_| Error::Adapter {
+        let content = fs::read_to_string(&package_json_path).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("package.json not found in {}", path.display()),
+            message: format!(
+                "Failed to read package.json at {}: {}",
+                package_json_path.display(),
+                e
+            ),
         })?;
 
         let json: Value = serde_json::from_str(&content).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("Failed to parse package.json: {}", e),
+            message: format!(
+                "Failed to parse package.json at {}: {}. File may be malformed JSON.",
+                package_json_path.display(),
+                e
+            ),
         })?;
 
         let version = json
@@ -45,6 +52,15 @@ impl LanguageAdapter for JsAdapter {
     }
 
     fn bump_version(&self, path: &Path, new_version: &str) -> Result<()> {
+        // Validate version format
+        semver::Version::parse(new_version).map_err(|e| Error::Adapter {
+            package: path.display().to_string(),
+            message: format!(
+                "Invalid version format '{}': {}. Expected semver format (e.g., 1.2.3)",
+                new_version, e
+            ),
+        })?;
+
         let package_json_path = path.join("package.json");
         let package_name =
             path.file_name()
@@ -53,19 +69,46 @@ impl LanguageAdapter for JsAdapter {
                     package: path.display().to_string(),
                     message: format!("Invalid package path: {}", path.display()),
                 })?;
-        let content = fs::read_to_string(&package_json_path).map_err(|_| Error::Adapter {
+        let content = fs::read_to_string(&package_json_path).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("package.json not found in {}", path.display()),
+            message: format!(
+                "Failed to read package.json at {}: {}",
+                package_json_path.display(),
+                e
+            ),
         })?;
 
-        let version_re = Regex::new(r#""version"\s*:\s*"[^"]+""#).map_err(|e| Error::Adapter {
+        let mut json: Value = serde_json::from_str(&content).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
-            message: format!("Failed to create regex: {}", e),
+            message: format!(
+                "Failed to parse package.json at {}: {}. File may be malformed JSON.",
+                package_json_path.display(),
+                e
+            ),
         })?;
 
-        let updated = version_re.replace(&content, format!(r#""version": "{}""#, new_version));
+        // Update version field
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert(
+                "version".to_string(),
+                Value::String(new_version.to_string()),
+            );
+        } else {
+            return Err(Error::Adapter {
+                package: package_name.to_string(),
+                message: format!(
+                    "package.json at {} root is not an object. Expected JSON object.",
+                    package_json_path.display()
+                ),
+            });
+        }
 
-        fs::write(&package_json_path, updated.as_ref()).map_err(|e| Error::Adapter {
+        let updated_content = serde_json::to_string_pretty(&json).map_err(|e| Error::Adapter {
+            package: package_name.to_string(),
+            message: format!("Failed to serialize package.json: {}", e),
+        })?;
+
+        fs::write(&package_json_path, updated_content).map_err(|e| Error::Adapter {
             package: package_name.to_string(),
             message: format!("Failed to write package.json: {}", e),
         })?;

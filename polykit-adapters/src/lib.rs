@@ -12,6 +12,7 @@ use polykit_core::adapter::LanguageAdapter;
 use polykit_core::package::Language;
 
 pub fn get_adapter(language: &Language) -> Box<dyn LanguageAdapter> {
+    // Since adapters are zero-sized structs, Box::new is essentially free (no heap allocation)
     match language {
         Language::Js | Language::Ts => Box::new(JsAdapter),
         Language::Python => Box::new(PythonAdapter),

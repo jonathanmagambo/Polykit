@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  polykit-cache:
+    build:
+      context: ..
+      dockerfile: polykit-cache/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - cache-data:/var/cache/polykit
+    environment:
+      - RUST_LOG=info
+    command:
+      - --storage-dir
+      - /var/cache/polykit
+      - --bind
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --max-size
+      - "1073741824"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/artifacts/0000000000000000000000000000000000000000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  cache-data:
+    driver: local
