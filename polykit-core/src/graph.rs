@@ -143,8 +143,8 @@ impl DependencyGraph {
     ///
     /// This is cached during graph construction for fast access.
     #[inline]
-    pub fn topological_order(&self) -> Result<Vec<String>> {
-        Ok(self.cached_topological_order.clone())
+    pub fn topological_order(&self) -> &[String] {
+        &self.cached_topological_order
     }
 
     /// Returns dependency levels for parallel execution.

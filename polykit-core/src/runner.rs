@@ -6,16 +6,20 @@ use std::process::{Command, Stdio};
 
 use rayon::prelude::*;
 
+use crate::command_validator::CommandValidator;
 use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
 use crate::package::Package;
 use crate::streaming::StreamingTask;
+use crate::task_cache::TaskCache;
 
 /// Executes tasks across packages respecting dependency order.
 pub struct TaskRunner {
     packages_dir: PathBuf,
     graph: DependencyGraph,
     max_parallel: Option<usize>,
+    command_validator: CommandValidator,
+    task_cache: Option<TaskCache>,
 }
 
 impl TaskRunner {
@@ -24,7 +28,19 @@ impl TaskRunner {
             packages_dir: packages_dir.into(),
             graph,
             max_parallel: None,
+            command_validator: CommandValidator::new(),
+            task_cache: None,
         }
+    }
+
+    pub fn with_command_validator(mut self, validator: CommandValidator) -> Self {
+        self.command_validator = validator;
+        self
+    }
+
+    pub fn with_task_cache(mut self, cache: TaskCache) -> Self {
+        self.task_cache = Some(cache);
+        self
     }
 
     pub fn with_max_parallel(mut self, max_parallel: Option<usize>) -> Self {
@@ -90,22 +106,23 @@ impl TaskRunner {
         Ok(results)
     }
 
-    pub fn run_task_streaming<F>(
+    pub async fn run_task_streaming<F>(
         &self,
         task_name: &str,
         package_names: Option<&[String]>,
         on_output: F,
     ) -> Result<Vec<TaskResult>>
     where
-        F: Fn(&str, &str, bool) + Send + Sync,
+        F: Fn(&str, &str, bool) + Send + Sync + 'static,
     {
-        let packages_to_run = if let Some(names) = package_names {
+        let packages_to_run: Vec<Package> = if let Some(names) = package_names {
             names
                 .iter()
                 .filter_map(|name| self.graph.get_package(name))
-                .collect::<Vec<_>>()
+                .cloned()
+                .collect()
         } else {
-            self.graph.all_packages()
+            self.graph.all_packages().into_iter().cloned().collect()
         };
 
         if packages_to_run.is_empty() {
@@ -118,56 +135,115 @@ impl TaskRunner {
         let levels = self.graph.dependency_levels();
         let mut results = Vec::new();
         use std::sync::{Arc, Mutex};
+        use tokio::sync::mpsc;
+
         let output_handler = Arc::new(Mutex::new(on_output));
 
         for level in levels {
-            let level_packages: Vec<&Package> = level
+            let level_packages: Vec<Package> = level
                 .iter()
                 .filter(|name| packages_set.contains(*name))
                 .filter_map(|name| self.graph.get_package(name))
+                .cloned()
                 .collect();
 
             if level_packages.is_empty() {
                 continue;
             }
 
+            let (tx, mut rx) = mpsc::unbounded_channel::<(String, String, bool)>();
             let output_handler_clone = Arc::clone(&output_handler);
 
-            let level_results: Result<Vec<TaskResult>> = level_packages
-                .into_par_iter()
-                .map(|package| {
-                    let package_name = package.name.clone();
-                    let package_path = self.packages_dir.join(&package.path);
-                    let streaming_task = StreamingTask::spawn(package, task_name, &package_path)?;
+            let output_task = tokio::spawn(async move {
+                while let Some((package_name, line, is_stderr)) = rx.recv().await {
+                    if let Ok(handler) = output_handler_clone.lock() {
+                        handler(&package_name, &line, is_stderr);
+                    }
+                }
+            });
+
+            let mut handles = Vec::new();
+            let packages_dir = self.packages_dir.clone();
+            for package in level_packages {
+                let package_name = package.name.clone();
+                let package_path = packages_dir.join(&package.path);
+                let task_name = task_name.to_string();
+                let tx_clone = tx.clone();
+
+                let handle = tokio::spawn(async move {
+                    let streaming_task =
+                        match StreamingTask::spawn(&package, &task_name, &package_path).await {
+                            Ok(task) => task,
+                            Err(e) => return Err(e),
+                        };
+
                     let stdout = Arc::new(Mutex::new(String::new()));
                     let stderr = Arc::new(Mutex::new(String::new()));
-                    let output_handler_inner = Arc::clone(&output_handler_clone);
                     let stdout_clone = Arc::clone(&stdout);
                     let stderr_clone = Arc::clone(&stderr);
                     let package_name_clone = package_name.clone();
 
-                    let success = streaming_task.stream_output(move |line, is_stderr| {
-                        if is_stderr {
-                            stderr_clone.lock().unwrap().push_str(line);
-                            stderr_clone.lock().unwrap().push('\n');
-                        } else {
-                            stdout_clone.lock().unwrap().push_str(line);
-                            stdout_clone.lock().unwrap().push('\n');
-                        }
-                        output_handler_inner.lock().unwrap()(&package_name_clone, line, is_stderr);
-                    })?;
+                    let success = streaming_task
+                        .stream_output(move |line, is_stderr| {
+                            if is_stderr {
+                                if let Ok(mut stderr_guard) = stderr_clone.lock() {
+                                    stderr_guard.push_str(line);
+                                    stderr_guard.push('\n');
+                                }
+                            } else if let Ok(mut stdout_guard) = stdout_clone.lock() {
+                                stdout_guard.push_str(line);
+                                stdout_guard.push('\n');
+                            }
+                            let _ = tx_clone.send((
+                                package_name_clone.clone(),
+                                line.to_string(),
+                                is_stderr,
+                            ));
+                        })
+                        .await?;
+
+                    let stdout_result = Arc::try_unwrap(stdout)
+                        .map_err(|_| Error::MutexLock("Failed to unwrap stdout Arc".to_string()))?
+                        .into_inner()
+                        .map_err(|e| {
+                            Error::MutexLock(format!("Failed to unwrap stdout Mutex: {}", e))
+                        })?;
+
+                    let stderr_result = Arc::try_unwrap(stderr)
+                        .map_err(|_| Error::MutexLock("Failed to unwrap stderr Arc".to_string()))?
+                        .into_inner()
+                        .map_err(|e| {
+                            Error::MutexLock(format!("Failed to unwrap stderr Mutex: {}", e))
+                        })?;
 
                     Ok(TaskResult {
                         package_name,
-                        task_name: task_name.to_string(),
+                        task_name,
                         success,
-                        stdout: Arc::try_unwrap(stdout).unwrap().into_inner().unwrap(),
-                        stderr: Arc::try_unwrap(stderr).unwrap().into_inner().unwrap(),
+                        stdout: stdout_result,
+                        stderr: stderr_result,
                     })
-                })
-                .collect();
+                });
+                handles.push(handle);
+            }
 
-            results.extend(level_results?);
+            drop(tx);
+
+            for handle in handles {
+                match handle.await {
+                    Ok(Ok(result)) => results.push(result),
+                    Ok(Err(e)) => return Err(e),
+                    Err(e) => {
+                        return Err(Error::TaskExecution {
+                            package: "unknown".to_string(),
+                            task: task_name.to_string(),
+                            message: format!("Task execution failed: {}", e),
+                        });
+                    }
+                }
+            }
+
+            output_task.abort();
         }
 
         Ok(results)
@@ -274,6 +350,14 @@ impl TaskRunner {
                 ),
             })?;
 
+        if let Some(ref cache) = self.task_cache {
+            if let Some(cached_result) = cache.get(&package.name, task_name, &task.command)? {
+                return Ok(cached_result);
+            }
+        }
+
+        self.command_validator.validate(&task.command)?;
+
         let package_path = self.packages_dir.join(&package.path);
         let output = Command::new("sh")
             .arg("-c")
@@ -288,13 +372,19 @@ impl TaskRunner {
                 message: format!("Failed to execute task: {}", e),
             })?;
 
-        Ok(TaskResult {
+        let result = TaskResult {
             package_name: package.name.clone(),
             task_name: task_name.to_string(),
             success: output.status.success(),
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        })
+        };
+
+        if let Some(ref cache) = self.task_cache {
+            let _ = cache.put(&package.name, task_name, &task.command, &result);
+        }
+
+        Ok(result)
     }
 
     fn execute_task(&self, package: &Package, task_name: &str) -> Result<TaskResult> {

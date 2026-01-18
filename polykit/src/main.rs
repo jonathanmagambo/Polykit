@@ -137,9 +137,14 @@ fn main() -> Result<()> {
         Commands::Graph { json } => {
             commands::cmd_graph(cli.packages_dir, json, cli.no_cache, cli.show_cache_stats)?
         }
-        Commands::Affected { files, git, base } => {
-            commands::cmd_affected(cli.packages_dir, files, git, base, cli.no_cache, cli.show_cache_stats)?
-        }
+        Commands::Affected { files, git, base } => commands::cmd_affected(
+            cli.packages_dir,
+            files,
+            git,
+            base,
+            cli.no_cache,
+            cli.show_cache_stats,
+        )?,
         Commands::Build {
             packages,
             parallel,
@@ -184,9 +189,12 @@ fn main() -> Result<()> {
             cli.no_cache,
             cli.show_cache_stats,
         )?,
-        Commands::Why { package } => {
-            commands::cmd_why(cli.packages_dir, package, cli.no_cache, cli.show_cache_stats)?
-        }
+        Commands::Why { package } => commands::cmd_why(
+            cli.packages_dir,
+            package,
+            cli.no_cache,
+            cli.show_cache_stats,
+        )?,
         Commands::Validate { json } => {
             commands::cmd_validate(cli.packages_dir, json, cli.no_cache, cli.show_cache_stats)?
         }

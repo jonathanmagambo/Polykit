@@ -21,6 +21,9 @@ indexmap.workspace = true
 smallvec.workspace = true
 dirs.workspace = true
 notify.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio.workspace = true
+proptest.workspace = true

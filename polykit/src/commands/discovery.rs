@@ -61,7 +61,7 @@ pub fn cmd_graph(
     let packages = scanner.scan()?;
     let graph = DependencyGraph::new(packages)?;
 
-    let order = graph.topological_order()?;
+    let order = graph.topological_order();
 
     if json {
         let graph_data = serde_json::json!({

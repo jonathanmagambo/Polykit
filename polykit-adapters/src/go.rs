@@ -18,20 +18,22 @@ impl LanguageAdapter for GoAdapter {
 
     fn read_metadata(&self, path: &Path) -> Result<LangMetadata> {
         let go_mod_path = path.join("go.mod");
-        let package_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let package_name =
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| Error::Adapter {
+                    package: path.display().to_string(),
+                    message: format!("Invalid package path: {}", path.display()),
+                })?;
         let _content = fs::read_to_string(&go_mod_path).map_err(|_| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("go.mod not found in {}", path.display()),
         })?;
 
         let _version_re =
             Regex::new(r#"(?m)^module\s+[^\s]+(?:\s+//\s+indirect)?$"#).map_err(|e| {
                 Error::Adapter {
-                    package: package_name,
+                    package: package_name.to_string(),
                     message: format!("Failed to create regex: {}", e),
                 }
             })?;

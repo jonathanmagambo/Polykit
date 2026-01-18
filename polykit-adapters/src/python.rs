@@ -19,18 +19,20 @@ impl LanguageAdapter for PythonAdapter {
 
     fn read_metadata(&self, path: &Path) -> Result<LangMetadata> {
         let pyproject_path = path.join("pyproject.toml");
-        let package_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let package_name =
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| Error::Adapter {
+                    package: path.display().to_string(),
+                    message: format!("Invalid package path: {}", path.display()),
+                })?;
         let content = fs::read_to_string(&pyproject_path).map_err(|_| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("pyproject.toml not found in {}", path.display()),
         })?;
 
         let toml: Value = content.parse().map_err(|e| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("Failed to parse pyproject.toml: {}", e),
         })?;
 
@@ -52,25 +54,27 @@ impl LanguageAdapter for PythonAdapter {
 
     fn bump_version(&self, path: &Path, new_version: &str) -> Result<()> {
         let pyproject_path = path.join("pyproject.toml");
-        let package_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let package_name =
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| Error::Adapter {
+                    package: path.display().to_string(),
+                    message: format!("Invalid package path: {}", path.display()),
+                })?;
         let content = fs::read_to_string(&pyproject_path).map_err(|_| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("pyproject.toml not found in {}", path.display()),
         })?;
 
         let version_re = Regex::new(r#"version\s*=\s*"[^"]+""#).map_err(|e| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("Failed to create regex: {}", e),
         })?;
 
         let updated = version_re.replace(&content, format!(r#"version = "{}""#, new_version));
 
         fs::write(&pyproject_path, updated.as_ref()).map_err(|e| Error::Adapter {
-            package: package_name,
+            package: package_name.to_string(),
             message: format!("Failed to write pyproject.toml: {}", e),
         })?;
 

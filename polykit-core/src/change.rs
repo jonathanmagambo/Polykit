@@ -6,6 +6,7 @@ use std::process::Command;
 
 use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
+use crate::path_utils;
 
 /// Detects packages affected by file changes.
 pub struct ChangeDetector;
@@ -62,33 +63,7 @@ impl ChangeDetector {
     }
 
     fn file_to_package(file_path: &Path, packages_dir: &Path) -> Option<String> {
-        let relative = file_path.strip_prefix(packages_dir).ok()?;
-
-        for component in relative.components() {
-            if let std::path::Component::Normal(name) = component {
-                let name_str = name.to_string_lossy();
-                if name_str == "polykit.toml" {
-                    return relative
-                        .parent()
-                        .and_then(|p| p.components().next())
-                        .and_then(|c| {
-                            if let std::path::Component::Normal(n) = c {
-                                Some(n.to_string_lossy().to_string())
-                            } else {
-                                None
-                            }
-                        });
-                }
-            }
-        }
-
-        relative.components().next().and_then(|c| {
-            if let std::path::Component::Normal(n) = c {
-                Some(n.to_string_lossy().to_string())
-            } else {
-                None
-            }
-        })
+        path_utils::file_to_package(file_path, packages_dir)
     }
 
     fn git_diff(base: &str) -> Result<Vec<PathBuf>> {

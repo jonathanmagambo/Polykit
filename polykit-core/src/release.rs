@@ -8,6 +8,7 @@ use semver::Version;
 use crate::adapter::LanguageAdapter;
 use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
+use crate::release_reporter::ReleaseReporter;
 
 type AdapterGetter =
     Box<dyn Fn(&crate::package::Language) -> Box<dyn LanguageAdapter> + Send + Sync>;
@@ -18,6 +19,7 @@ pub struct ReleaseEngine {
     graph: DependencyGraph,
     dry_run: bool,
     adapter_getter: AdapterGetter,
+    reporter: Box<dyn ReleaseReporter>,
 }
 
 /// A plan for releasing packages with version bumps.
@@ -58,20 +60,26 @@ impl ReleaseEngine {
     ///
     /// The `adapter_getter` function is used to obtain language adapters for reading
     /// and updating package metadata.
-    pub fn new<F>(
+    ///
+    /// The `reporter` is used to report version bump operations without directly
+    /// writing to stdout/stderr.
+    pub fn new<F, R>(
         packages_dir: impl Into<PathBuf>,
         graph: DependencyGraph,
         dry_run: bool,
         adapter_getter: F,
+        reporter: R,
     ) -> Self
     where
         F: Fn(&crate::package::Language) -> Box<dyn LanguageAdapter> + Send + Sync + 'static,
+        R: ReleaseReporter + 'static,
     {
         Self {
             packages_dir: packages_dir.into(),
             graph,
             dry_run,
             adapter_getter: Box::new(adapter_getter),
+            reporter: Box::new(reporter),
         }
     }
 
@@ -85,7 +93,7 @@ impl ReleaseEngine {
     ///
     /// Returns an error if the package is not found or version operations fail.
     pub fn plan_release(&self, package_name: &str, bump_type: BumpType) -> Result<ReleasePlan> {
-        let order = self.graph.topological_order()?;
+        let order = self.graph.topological_order();
         let mut plan = ReleasePlan {
             packages: Vec::new(),
         };
@@ -176,7 +184,7 @@ impl ReleaseEngine {
 
     /// Executes a release plan by updating version numbers in package files.
     ///
-    /// If `dry_run` is enabled, this will only print what would be changed
+    /// If `dry_run` is enabled, this will only report what would be changed
     /// without actually modifying files.
     ///
     /// # Errors
@@ -201,18 +209,16 @@ impl ReleaseEngine {
             let adapter = (self.adapter_getter)(&package.language);
             let package_path = self.packages_dir.join(&package.path);
 
-            if self.dry_run {
-                println!(
-                    "[DRY RUN] Would bump {} from {:?} to {}",
-                    release_pkg.name, release_pkg.old_version, release_pkg.new_version
-                );
-            } else {
+            if !self.dry_run {
                 adapter.bump_version(&package_path, &release_pkg.new_version)?;
-                println!(
-                    "Bumped {} from {:?} to {}",
-                    release_pkg.name, release_pkg.old_version, release_pkg.new_version
-                );
             }
+
+            self.reporter.report_bump(
+                &release_pkg.name,
+                release_pkg.old_version.as_deref(),
+                &release_pkg.new_version,
+                self.dry_run,
+            );
         }
 
         Ok(())

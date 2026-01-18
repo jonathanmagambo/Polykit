@@ -7,6 +7,7 @@ use notify::Config as NotifyConfig;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::error::{Error, Result};
+use crate::path_utils;
 
 pub struct WatcherConfig {
     pub debounce_ms: u64,
@@ -35,7 +36,9 @@ impl FileWatcher {
 
         let watcher = RecommendedWatcher::new(
             move |res| {
-                tx.send(res).expect("Failed to send event");
+                if let Err(e) = tx.send(res) {
+                    eprintln!("Failed to send watcher event: {}", e);
+                }
             },
             notify_config,
         )
@@ -121,32 +124,6 @@ impl FileWatcher {
     }
 
     fn file_to_package(file_path: &Path, packages_dir: &Path) -> Option<String> {
-        let relative = file_path.strip_prefix(packages_dir).ok()?;
-
-        for component in relative.components() {
-            if let std::path::Component::Normal(name) = component {
-                let name_str = name.to_string_lossy();
-                if name_str == "polykit.toml" {
-                    return relative
-                        .parent()
-                        .and_then(|p| p.components().next())
-                        .and_then(|c| {
-                            if let std::path::Component::Normal(n) = c {
-                                Some(n.to_string_lossy().to_string())
-                            } else {
-                                None
-                            }
-                        });
-                }
-            }
-        }
-
-        relative.components().next().and_then(|c| {
-            if let std::path::Component::Normal(n) = c {
-                Some(n.to_string_lossy().to_string())
-            } else {
-                None
-            }
-        })
+        path_utils::file_to_package(file_path, packages_dir)
     }
 }

@@ -8,6 +8,7 @@ use polykit_adapters::get_adapter;
 use polykit_core::release::BumpType;
 use polykit_core::{DependencyGraph, ReleaseEngine};
 
+use super::release_reporter::CliReleaseReporter;
 use super::{create_scanner, print_cache_stats};
 
 pub fn cmd_release(
@@ -22,7 +23,13 @@ pub fn cmd_release(
     let scanned = scanner.scan()?;
     let graph = DependencyGraph::new(scanned)?;
 
-    let engine = ReleaseEngine::new(&packages_dir, graph, dry_run, get_adapter);
+    let engine = ReleaseEngine::new(
+        &packages_dir,
+        graph,
+        dry_run,
+        get_adapter,
+        CliReleaseReporter,
+    );
     let plan = engine.plan_release(&package, bump_type)?;
 
     if dry_run {

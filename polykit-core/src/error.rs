@@ -48,6 +48,9 @@ pub enum Error {
 
     #[error("Release error: {0}")]
     Release(String),
+
+    #[error("Mutex lock error: {0}")]
+    MutexLock(String),
 }
 
 impl From<toml::de::Error> for Error {

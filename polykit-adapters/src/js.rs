@@ -19,18 +19,20 @@ impl LanguageAdapter for JsAdapter {
 
     fn read_metadata(&self, path: &Path) -> Result<LangMetadata> {
         let package_json_path = path.join("package.json");
-        let package_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let package_name =
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| Error::Adapter {
+                    package: path.display().to_string(),
+                    message: format!("Invalid package path: {}", path.display()),
+                })?;
         let content = fs::read_to_string(&package_json_path).map_err(|_| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("package.json not found in {}", path.display()),
         })?;
 
         let json: Value = serde_json::from_str(&content).map_err(|e| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("Failed to parse package.json: {}", e),
         })?;
 
@@ -44,25 +46,27 @@ impl LanguageAdapter for JsAdapter {
 
     fn bump_version(&self, path: &Path, new_version: &str) -> Result<()> {
         let package_json_path = path.join("package.json");
-        let package_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let package_name =
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| Error::Adapter {
+                    package: path.display().to_string(),
+                    message: format!("Invalid package path: {}", path.display()),
+                })?;
         let content = fs::read_to_string(&package_json_path).map_err(|_| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("package.json not found in {}", path.display()),
         })?;
 
         let version_re = Regex::new(r#""version"\s*:\s*"[^"]+""#).map_err(|e| Error::Adapter {
-            package: package_name.clone(),
+            package: package_name.to_string(),
             message: format!("Failed to create regex: {}", e),
         })?;
 
         let updated = version_re.replace(&content, format!(r#""version": "{}""#, new_version));
 
         fs::write(&package_json_path, updated.as_ref()).map_err(|e| Error::Adapter {
-            package: package_name,
+            package: package_name.to_string(),
             message: format!("Failed to write package.json: {}", e),
         })?;
 

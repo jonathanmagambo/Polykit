@@ -38,7 +38,7 @@ impl Scanner {
                 let mut table: toml::Value = toml::from_str(&content).ok()?;
                 let workspace_table = table.get_mut("workspace")?.as_table_mut()?;
 
-                return Some(WorkspaceConfig {
+                let mut config = WorkspaceConfig {
                     cache_dir: workspace_table
                         .get("cache_dir")
                         .and_then(|v| v.as_str())
@@ -48,7 +48,14 @@ impl Scanner {
                         .and_then(|v| v.as_integer())
                         .map(|i| i as usize),
                     workspace_config_path: Some(workspace_toml),
-                });
+                    tasks: HashMap::new(),
+                };
+
+                if let Some(tasks_table) = workspace_table.get("tasks").and_then(|v| v.as_table()) {
+                    config.tasks = crate::config::parse_tasks_from_toml_map(tasks_table);
+                }
+
+                return Some(config);
             }
 
             if current_dir.join(".git").exists() {
@@ -82,20 +89,23 @@ impl Scanner {
     pub fn with_default_cache(packages_dir: impl AsRef<Path>) -> Self {
         let packages_dir = packages_dir.as_ref().to_path_buf();
         let workspace_config = Self::load_workspace_config(&packages_dir);
-        let cache_dir = workspace_config.as_ref().and_then(|wc| {
-            wc.cache_dir.as_ref().map(|cache_dir_str| {
-                let cache_path = PathBuf::from(cache_dir_str);
-                if cache_path.is_absolute() {
-                    cache_path
-                } else {
-                    wc.workspace_config_path
-                        .as_ref()
-                        .and_then(|config_path| config_path.parent())
-                        .map(|config_dir| config_dir.join(&cache_path))
-                        .unwrap_or_else(|| PathBuf::from(cache_dir_str))
-                }
+        let cache_dir = workspace_config
+            .as_ref()
+            .and_then(|wc| {
+                wc.cache_dir.as_ref().map(|cache_dir_str| {
+                    let cache_path = PathBuf::from(cache_dir_str);
+                    if cache_path.is_absolute() {
+                        cache_path
+                    } else {
+                        wc.workspace_config_path
+                            .as_ref()
+                            .and_then(|config_path| config_path.parent())
+                            .map(|config_dir| config_dir.join(&cache_path))
+                            .unwrap_or_else(|| PathBuf::from(cache_dir_str))
+                    }
+                })
             })
-        }).unwrap_or_else(get_default_cache_dir);
+            .unwrap_or_else(get_default_cache_dir);
         Self {
             packages_dir,
             cache: Some(Cache::new(cache_dir)),
@@ -163,13 +173,24 @@ impl Scanner {
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|_| package_path.to_path_buf());
 
+                let mut package_tasks = config.to_tasks();
+
+                if let Some(ref workspace_config) = self.workspace_config {
+                    let workspace_tasks = workspace_config.to_tasks();
+                    for workspace_task in workspace_tasks {
+                        if !package_tasks.iter().any(|t| t.name == workspace_task.name) {
+                            package_tasks.push(workspace_task);
+                        }
+                    }
+                }
+
                 Ok(Package::new(
                     config.name.clone(),
                     language,
                     config.public,
                     relative_path,
                     config.deps.internal.clone(),
-                    config.to_tasks(),
+                    package_tasks,
                 ))
             })
             .collect();

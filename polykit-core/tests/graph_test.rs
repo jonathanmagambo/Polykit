@@ -34,7 +34,7 @@ fn create_test_packages() -> Vec<Package> {
 fn test_topological_order() {
     let packages = create_test_packages();
     let graph = DependencyGraph::new(packages).unwrap();
-    let order = graph.topological_order().unwrap();
+    let order = graph.topological_order();
 
     assert_eq!(order.len(), 3);
     assert_eq!(order[0], "pkg-a");

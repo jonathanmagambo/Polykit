@@ -1,8 +1,9 @@
 //! Streaming output utilities for task execution.
 
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, Command};
 
+use crate::command_validator::CommandValidator;
 use crate::error::{Error, Result};
 use crate::package::Package;
 
@@ -13,7 +14,7 @@ pub struct StreamingTask {
 }
 
 impl StreamingTask {
-    pub fn spawn(
+    pub async fn spawn(
         package: &Package,
         task_name: &str,
         package_path: &std::path::Path,
@@ -26,12 +27,15 @@ impl StreamingTask {
                 message: format!("Task '{}' not found", task_name),
             })?;
 
+        let validator = CommandValidator::new();
+        validator.validate(&task.command)?;
+
         let child = Command::new("sh")
             .arg("-c")
             .arg(&task.command)
             .current_dir(package_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| Error::TaskExecution {
                 package: package.name.clone(),
@@ -46,9 +50,9 @@ impl StreamingTask {
         })
     }
 
-    pub fn stream_output<F>(mut self, mut on_line: F) -> Result<bool>
+    pub async fn stream_output<F>(mut self, mut on_line: F) -> Result<bool>
     where
-        F: FnMut(&str, bool),
+        F: FnMut(&str, bool) + Send,
     {
         let package_name = self.package_name.clone();
         let task_name = self.task_name.clone();
@@ -75,55 +79,56 @@ impl StreamingTask {
         let mut stderr_reader = BufReader::new(&mut stderr);
 
         loop {
-            let mut line = String::new();
-            let mut has_output = false;
+            let mut stdout_line = String::new();
+            let mut stderr_line = String::new();
 
-            if stdout_reader.read_line(&mut line).unwrap_or(0) > 0 {
-                let trimmed = line.trim_end();
-                if !trimmed.is_empty() {
-                    on_line(trimmed, false);
-                    has_output = true;
+            tokio::select! {
+                result = stdout_reader.read_line(&mut stdout_line) => {
+                    match result {
+                        Ok(0) => {}
+                        Ok(_) => {
+                            let trimmed = stdout_line.trim_end();
+                            if !trimmed.is_empty() {
+                                on_line(trimmed, false);
+                            }
+                        }
+                        Err(e) => {
+                            return Err(Error::TaskExecution {
+                                package: self.package_name.clone(),
+                                task: self.task_name.clone(),
+                                message: format!("Failed to read stdout: {}", e),
+                            });
+                        }
+                    }
                 }
-                line.clear();
-            }
-
-            if stderr_reader.read_line(&mut line).unwrap_or(0) > 0 {
-                let trimmed = line.trim_end();
-                if !trimmed.is_empty() {
-                    on_line(trimmed, true);
-                    has_output = true;
+                result = stderr_reader.read_line(&mut stderr_line) => {
+                    match result {
+                        Ok(0) => {}
+                        Ok(_) => {
+                            let trimmed = stderr_line.trim_end();
+                            if !trimmed.is_empty() {
+                                on_line(trimmed, true);
+                            }
+                        }
+                        Err(e) => {
+                            return Err(Error::TaskExecution {
+                                package: self.package_name.clone(),
+                                task: self.task_name.clone(),
+                                message: format!("Failed to read stderr: {}", e),
+                            });
+                        }
+                    }
                 }
-                line.clear();
-            }
-
-            if !has_output {
-                let package_name = self.package_name.clone();
-                let task_name = self.task_name.clone();
-                if self
-                    .child
-                    .try_wait()
-                    .map_err(|e| Error::TaskExecution {
-                        package: package_name.clone(),
-                        task: task_name.clone(),
-                        message: format!("Failed to check process: {}", e),
-                    })?
-                    .is_some()
-                {
-                    break;
+                status = self.child.wait() => {
+                    let exit_status = status.map_err(|e| Error::TaskExecution {
+                        package: self.package_name.clone(),
+                        task: self.task_name.clone(),
+                        message: format!("Failed to wait for process: {}", e),
+                    })?;
+                    return Ok(exit_status.success());
                 }
-                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
-
-        let package_name = self.package_name.clone();
-        let task_name = self.task_name.clone();
-        let status = self.child.wait().map_err(|e| Error::TaskExecution {
-            package: package_name,
-            task: task_name,
-            message: format!("Failed to wait for process: {}", e),
-        })?;
-
-        Ok(status.success())
     }
 
     pub fn package_name(&self) -> &str {

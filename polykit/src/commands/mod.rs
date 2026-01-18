@@ -3,6 +3,7 @@
 mod discovery;
 mod execution;
 mod info;
+mod release_reporter;
 mod watch;
 
 use std::path::PathBuf;

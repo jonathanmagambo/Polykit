@@ -44,7 +44,9 @@ fn run_task_with_progress(
     } else {
         let pb = Arc::new(Mutex::new(pb));
         let pb_clone = Arc::clone(&pb);
-        let results = runner.run_task_streaming(
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| anyhow::anyhow!("Failed to create tokio runtime: {}", e))?;
+        let results = rt.block_on(runner.run_task_streaming(
             task_name,
             packages_opt,
             move |package_name, line, is_stderr| {
@@ -54,10 +56,14 @@ fn run_task_with_progress(
                 } else {
                     println!("{}{}", prefix.bright_black(), line);
                 }
-                pb_clone.lock().unwrap().tick();
+                if let Ok(pb_guard) = pb_clone.lock() {
+                    pb_guard.tick();
+                }
             },
-        )?;
-        pb.lock().unwrap().finish_and_clear();
+        ))?;
+        if let Ok(pb_guard) = pb.lock() {
+            pb_guard.finish_and_clear();
+        }
         Ok(results)
     }
 }

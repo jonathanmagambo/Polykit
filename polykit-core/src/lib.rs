@@ -1,27 +1,40 @@
 //! Core library for monorepo orchestration.
 
 pub mod adapter;
+pub mod adapter_registry;
 pub mod cache;
 pub mod change;
+pub mod command_validator;
 pub mod config;
 pub mod error;
 pub mod graph;
+pub mod metrics;
 pub mod package;
+pub mod path_utils;
 pub mod release;
+pub mod release_reporter;
+pub mod remote_cache;
 pub mod runner;
 pub mod scanner;
 pub mod streaming;
+pub mod task_cache;
 pub mod watcher;
 
 pub use adapter::{LangMetadata, LanguageAdapter};
+pub use adapter_registry::AdapterRegistry;
 pub use cache::{Cache, CacheStats};
 pub use change::ChangeDetector;
+pub use command_validator::CommandValidator;
 pub use config::{Config, WorkspaceConfig};
 pub use error::{Error, Result};
 pub use graph::{DependencyGraph, GraphNode};
+pub use metrics::ExecutionMetrics;
 pub use package::{Language, Package, Task};
 pub use release::{BumpType, ReleaseEngine, ReleasePackage, ReleasePlan};
+pub use release_reporter::ReleaseReporter;
+pub use remote_cache::{RemoteCache, RemoteCacheBackend, RemoteCacheConfig};
 pub use runner::{TaskResult, TaskRunner};
 pub use scanner::Scanner;
 pub use streaming::StreamingTask;
+pub use task_cache::TaskCache;
 pub use watcher::{FileWatcher, WatcherConfig};
