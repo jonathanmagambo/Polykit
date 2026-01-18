@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use bincode;
 use serde::{Deserialize, Serialize};
+use xxhash_rust::xxh3::xxh3_64;
 
 use crate::error::{Error, Result};
 use crate::runner::TaskResult;
@@ -38,17 +39,15 @@ impl TaskCache {
 
     /// Gets the cache key for a task.
     fn cache_key(package_name: &str, task_name: &str, command: &str) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        package_name.hash(&mut hasher);
-        task_name.hash(&mut hasher);
-        command.hash(&mut hasher);
+        let mut buffer = Vec::with_capacity(package_name.len() + task_name.len() + command.len());
+        buffer.extend_from_slice(package_name.as_bytes());
+        buffer.extend_from_slice(task_name.as_bytes());
+        buffer.extend_from_slice(command.as_bytes());
+        let hash = xxh3_64(&buffer);
 
         let safe_package = package_name.replace(['/', '\\', '.', ':'], "_");
         let safe_task = task_name.replace(['/', '\\', '.', ':'], "_");
-        format!("task_{}_{}_{:x}", safe_package, safe_task, hasher.finish())
+        format!("task_{}_{}_{:x}", safe_package, safe_task, hash)
     }
 
     fn get_safe_cache_path(&self, cache_key: &str) -> Result<PathBuf> {
@@ -87,7 +86,12 @@ impl TaskCache {
             return Ok(None);
         }
 
-        let content = fs::read(&cache_path).map_err(Error::Io)?;
+        let compressed = fs::read(&cache_path).map_err(Error::Io)?;
+        let content = zstd::decode_all(&compressed[..]).map_err(|e| Error::Adapter {
+            package: "task-cache".to_string(),
+            message: format!("Failed to decompress task cache: {}", e),
+        })?;
+
         let entry: TaskCacheEntry = bincode::deserialize(&content).map_err(|e| Error::Adapter {
             package: "task-cache".to_string(),
             message: format!("Failed to parse task cache: {}", e),
@@ -104,11 +108,8 @@ impl TaskCache {
             return Ok(None);
         }
 
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        command.hash(&mut hasher);
-        if hasher.finish() != entry.command_hash {
+        let command_hash = xxh3_64(command.as_bytes());
+        if command_hash != entry.command_hash {
             return Ok(None);
         }
 
@@ -138,28 +139,30 @@ impl TaskCache {
         let cache_key = Self::cache_key(package_name, task_name, command);
         let cache_path = self.get_safe_cache_path(&cache_key)?;
 
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        command.hash(&mut hasher);
+        let command_hash = xxh3_64(command.as_bytes());
 
         let entry = TaskCacheEntry {
             version: TASK_CACHE_VERSION,
             package_name: package_name.to_string(),
             task_name: task_name.to_string(),
             command: command.to_string(),
-            command_hash: hasher.finish(),
+            command_hash,
             success: result.success,
             stdout: result.stdout.clone(),
             stderr: result.stderr.clone(),
         };
 
-        let content = bincode::serialize(&entry).map_err(|e| Error::Adapter {
+        let serialized = bincode::serialize(&entry).map_err(|e| Error::Adapter {
             package: "task-cache".to_string(),
             message: format!("Failed to serialize task cache: {}", e),
         })?;
 
-        fs::write(&cache_path, content).map_err(Error::Io)?;
+        let compressed = zstd::encode_all(&serialized[..], 3).map_err(|e| Error::Adapter {
+            package: "task-cache".to_string(),
+            message: format!("Failed to compress task cache: {}", e),
+        })?;
+
+        fs::write(&cache_path, compressed).map_err(Error::Io)?;
 
         Ok(())
     }

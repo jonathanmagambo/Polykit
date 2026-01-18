@@ -10,6 +10,7 @@ use crate::command_validator::CommandValidator;
 use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
 use crate::package::Package;
+use crate::simd_utils;
 use crate::streaming::StreamingTask;
 use crate::task_cache::TaskCache;
 
@@ -53,8 +54,10 @@ impl TaskRunner {
         task_name: &str,
         package_names: Option<&[String]>,
     ) -> Result<Vec<TaskResult>> {
-        // Fast path: single package, no dependencies to worry about
         if let Some(names) = package_names {
+            if names.is_empty() {
+                return Ok(Vec::new());
+            }
             if names.len() == 1 {
                 if let Some(package) = self.graph.get_package(&names[0]) {
                     let result = self.execute_task(package, task_name)?;
@@ -72,7 +75,6 @@ impl TaskRunner {
             self.graph.all_packages()
         };
 
-        // Fast path: empty set
         if packages_to_run.is_empty() {
             return Ok(Vec::new());
         }
@@ -81,12 +83,42 @@ impl TaskRunner {
             packages_to_run.iter().map(|p| p.name.clone()).collect();
 
         let levels = self.graph.dependency_levels();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(packages_to_run.len());
+
+        let pool_config = rayon::ThreadPoolBuilder::new()
+            .num_threads(self.max_parallel.unwrap_or_else(rayon::current_num_threads))
+            .build();
+
+        let pool = match pool_config {
+            Ok(p) => p,
+            Err(_) => {
+                for level in levels {
+                    let level_packages: Vec<&Package> = level
+                        .iter()
+                        .filter(|name| packages_set.contains(name.as_str()))
+                        .filter_map(|name| self.graph.get_package(name))
+                        .collect();
+
+                    if level_packages.is_empty() {
+                        continue;
+                    }
+
+                    let level_results: Result<Vec<TaskResult>> = level_packages
+                        .into_par_iter()
+                        .map(|package| self.execute_task(package, task_name))
+                        .collect();
+
+                    let mut level_results = level_results?;
+                    results.append(&mut level_results);
+                }
+                return Ok(results);
+            }
+        };
 
         for level in levels {
             let level_packages: Vec<&Package> = level
                 .iter()
-                .filter(|name| packages_set.contains(*name))
+                .filter(|name| packages_set.contains(name.as_str()))
                 .filter_map(|name| self.graph.get_package(name))
                 .collect();
 
@@ -94,10 +126,12 @@ impl TaskRunner {
                 continue;
             }
 
-            let level_results: Result<Vec<TaskResult>> = level_packages
-                .into_par_iter()
-                .map(|package| self.execute_task(package, task_name))
-                .collect();
+            let level_results: Result<Vec<TaskResult>> = pool.install(|| {
+                level_packages
+                    .into_par_iter()
+                    .map(|package| self.execute_task(package, task_name))
+                    .collect()
+            });
 
             let mut level_results = level_results?;
             results.append(&mut level_results);
@@ -372,12 +406,24 @@ impl TaskRunner {
                 message: format!("Failed to execute task: {}", e),
             })?;
 
+        let stdout = if simd_utils::is_ascii_fast(&output.stdout) {
+            unsafe { String::from_utf8_unchecked(output.stdout) }
+        } else {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        };
+
+        let stderr = if simd_utils::is_ascii_fast(&output.stderr) {
+            unsafe { String::from_utf8_unchecked(output.stderr) }
+        } else {
+            String::from_utf8_lossy(&output.stderr).to_string()
+        };
+
         let result = TaskResult {
             package_name: package.name.clone(),
             task_name: task_name.to_string(),
             success: output.status.success(),
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            stdout,
+            stderr,
         };
 
         if let Some(ref cache) = self.task_cache {

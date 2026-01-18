@@ -24,6 +24,7 @@ owo-colors.workspace = true
 indicatif.workspace = true
 ctrlc.workspace = true
 tokio.workspace = true
+mimalloc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

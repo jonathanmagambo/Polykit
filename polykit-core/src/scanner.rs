@@ -1,15 +1,17 @@
 //! Repository scanner for discovering packages.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 use walkdir::WalkDir;
 
 use crate::cache::Cache;
 use crate::config::{Config, WorkspaceConfig};
 use crate::error::Result;
 use crate::package::Package;
+use crate::simd_utils;
 
 fn get_default_cache_dir() -> std::path::PathBuf {
     dirs::cache_dir()
@@ -48,7 +50,7 @@ impl Scanner {
                         .and_then(|v| v.as_integer())
                         .map(|i| i as usize),
                     workspace_config_path: Some(workspace_toml),
-                    tasks: HashMap::new(),
+                    tasks: FxHashMap::default(),
                 };
 
                 if let Some(tasks_table) = workspace_table.get("tasks").and_then(|v| v.as_table()) {
@@ -149,11 +151,21 @@ impl Scanner {
 
     #[inline]
     fn scan_internal(&self) -> Result<Vec<Package>> {
+        let workspace_config = Arc::new(self.workspace_config.clone());
+        let packages_dir = Arc::new(self.packages_dir.clone());
+
         let config_files: Vec<PathBuf> = WalkDir::new(&self.packages_dir)
             .max_depth(2)
+            .follow_links(false)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name() == "polykit.toml")
+            .filter(|e| {
+                let name_bytes = e.file_name().as_encoded_bytes();
+                simd_utils::fast_str_eq(
+                    std::str::from_utf8(name_bytes).unwrap_or(""),
+                    "polykit.toml"
+                )
+            })
             .map(|e| e.path().to_path_buf())
             .collect();
 
@@ -181,7 +193,7 @@ impl Scanner {
 
                 let language = config.parse_language()?;
                 let relative_path = package_path
-                    .strip_prefix(&self.packages_dir)
+                    .strip_prefix(packages_dir.as_ref())
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|_| package_path.to_path_buf());
 
@@ -194,8 +206,8 @@ impl Scanner {
                     )?;
                 }
 
-                if let Some(ref workspace_config) = self.workspace_config {
-                    let workspace_tasks = workspace_config.to_tasks();
+                if let Some(ref ws_config) = workspace_config.as_ref() {
+                    let workspace_tasks = ws_config.to_tasks();
                     for workspace_task in workspace_tasks {
                         crate::command_validator::CommandValidator::validate_identifier(
                             &workspace_task.name,
@@ -208,23 +220,27 @@ impl Scanner {
                 }
 
                 Ok(Package::new(
-                    config.name.clone(),
+                    config.name,
                     language,
                     config.public,
                     relative_path,
-                    config.deps.internal.clone(),
+                    config.deps.internal,
                     package_tasks,
                 ))
             })
             .collect();
 
         let mut packages = packages?;
-        packages.sort_by(|a, b| a.name.cmp(&b.name));
+        packages.sort_unstable_by(|a, b| a.name.cmp(&b.name));
         Ok(packages)
     }
 
-    pub fn scan_as_map(&mut self) -> Result<HashMap<String, Package>> {
+    pub fn scan_as_map(&mut self) -> Result<FxHashMap<String, Package>> {
         let packages = self.scan()?;
-        Ok(packages.into_iter().map(|p| (p.name.clone(), p)).collect())
+        let mut map = FxHashMap::with_capacity_and_hasher(packages.len(), Default::default());
+        for p in packages {
+            map.insert(p.name.clone(), p);
+        }
+        Ok(map)
     }
 }

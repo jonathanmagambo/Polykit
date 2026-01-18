@@ -2,7 +2,8 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use git2::{DiffOptions, Repository};
 
 use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
@@ -38,7 +39,7 @@ impl ChangeDetector {
     ) -> Result<HashSet<String>> {
         let base = base.unwrap_or("HEAD");
         Self::validate_git_ref(base)?;
-        let changed_files = Self::git_diff(base)?;
+        let changed_files = Self::git_diff_with_libgit2(base)?;
         Self::detect_affected_packages(graph, &changed_files, packages_dir)
     }
 
@@ -99,34 +100,64 @@ impl ChangeDetector {
         Ok(())
     }
 
-    fn git_diff(base: &str) -> Result<Vec<PathBuf>> {
-        let output = Command::new("git")
-            .arg("diff")
-            .arg("--name-only")
-            .arg(base)
-            .output()
+    fn git_diff_with_libgit2(base: &str) -> Result<Vec<PathBuf>> {
+        let repo = Repository::open_from_env().map_err(|e| Error::Adapter {
+            package: "change-detection".to_string(),
+            message: format!("Failed to open git repository: {}", e),
+        })?;
+
+        let base_obj = repo
+            .revparse_single(base)
             .map_err(|e| Error::Adapter {
                 package: "change-detection".to_string(),
-                message: format!("Failed to run git diff: {}", e),
+                message: format!("Failed to parse git reference '{}': {}", base, e),
             })?;
 
-        if !output.status.success() {
-            return Err(Error::Adapter {
+        let base_tree = base_obj.peel_to_tree().map_err(|e| Error::Adapter {
+            package: "change-detection".to_string(),
+            message: format!("Failed to get tree from git reference: {}", e),
+        })?;
+
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.include_untracked(false);
+        diff_opts.recurse_untracked_dirs(false);
+
+        let head = repo.head().map_err(|e| Error::Adapter {
+            package: "change-detection".to_string(),
+            message: format!("Failed to get HEAD: {}", e),
+        })?;
+
+        let head_tree = head
+            .peel_to_tree()
+            .map_err(|e| Error::Adapter {
                 package: "change-detection".to_string(),
-                message: format!(
-                    "git diff failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-            });
-        }
+                message: format!("Failed to get tree from HEAD: {}", e),
+            })?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let files: Vec<PathBuf> = stdout
-            .lines()
-            .map(|line| PathBuf::from(line.trim()))
-            .filter(|p| !p.as_os_str().is_empty())
-            .collect();
+        let diff = repo
+            .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))
+            .map_err(|e| Error::Adapter {
+                package: "change-detection".to_string(),
+                message: format!("Failed to compute git diff: {}", e),
+            })?;
 
-        Ok(files)
+        let mut changed_files = Vec::new();
+        diff.foreach(
+            &mut |delta, _| {
+                if let Some(path) = delta.new_file().path() {
+                    changed_files.push(path.to_path_buf());
+                }
+                true
+            },
+            None,
+            None,
+            None,
+        )
+        .map_err(|e| Error::Adapter {
+            package: "change-detection".to_string(),
+            message: format!("Failed to iterate over git diff: {}", e),
+        })?;
+
+        Ok(changed_files)
     }
 }

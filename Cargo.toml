@@ -38,3 +38,19 @@ dirs = "5.0"
 ctrlc = "3.4"
 tokio = { version = "1.0", features = ["full"] }
 proptest = "1.5"
+rustc-hash = "2.0"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+git2 = "0.19"
+mimalloc = { version = "0.1", default-features = false }
+zstd = "0.13"
+memmap2 = "0.9"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.bench]
+inherits = "release"

@@ -16,6 +16,7 @@ pub mod release_reporter;
 pub mod remote_cache;
 pub mod runner;
 pub mod scanner;
+pub mod simd_utils;
 pub mod streaming;
 pub mod task_cache;
 pub mod watcher;

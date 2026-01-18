@@ -8,6 +8,9 @@ use polykit_core::release::BumpType;
 use polykit_core::Scanner;
 use tracing::Level;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[derive(Parser)]
 #[command(name = "polykit")]
 #[command(about = "Fast, language-agnostic monorepo orchestration tool")]

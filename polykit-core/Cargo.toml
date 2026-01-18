@@ -22,6 +22,12 @@ smallvec.workspace = true
 dirs.workspace = true
 notify.workspace = true
 tokio.workspace = true
+rustc-hash.workspace = true
+xxhash-rust.workspace = true
+git2.workspace = true
+mimalloc.workspace = true
+zstd.workspace = true
+memmap2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

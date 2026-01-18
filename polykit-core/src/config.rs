@@ -1,7 +1,6 @@
 //! TOML configuration parsing for package definitions.
 
-use std::collections::HashMap;
-
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::package::{Language, Task};
@@ -27,18 +26,18 @@ pub struct Config {
     pub deps: Deps,
     #[serde(deserialize_with = "deserialize_tasks")]
     #[serde(default)]
-    pub tasks: HashMap<String, TaskValue>,
+    pub tasks: FxHashMap<String, TaskValue>,
 }
 
 pub(crate) fn deserialize_tasks<'de, D>(
     deserializer: D,
-) -> Result<HashMap<String, TaskValue>, D::Error>
+) -> Result<FxHashMap<String, TaskValue>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let map: HashMap<String, toml::Value> = HashMap::deserialize(deserializer)?;
-    let mut result = HashMap::new();
-    let mut dotted_deps: HashMap<String, Vec<String>> = HashMap::new();
+    let map: FxHashMap<String, toml::Value> = FxHashMap::deserialize(deserializer)?;
+    let mut result = FxHashMap::default();
+    let mut dotted_deps: FxHashMap<String, Vec<String>> = FxHashMap::default();
 
     // First pass: parse regular tasks and collect dotted-key dependencies
     for (key, value) in map {
@@ -135,9 +134,9 @@ where
 
 pub(crate) fn parse_tasks_from_toml_map(
     map: &toml::map::Map<String, toml::Value>,
-) -> HashMap<String, TaskValue> {
-    let mut result = HashMap::new();
-    let mut dotted_deps: HashMap<String, Vec<String>> = HashMap::new();
+) -> FxHashMap<String, TaskValue> {
+    let mut result = FxHashMap::default();
+    let mut dotted_deps: FxHashMap<String, Vec<String>> = FxHashMap::default();
 
     for (key, value) in map {
         if let Some((task_name, dep_key)) = key.split_once('.') {
@@ -229,7 +228,7 @@ pub struct WorkspaceConfig {
     pub workspace_config_path: Option<std::path::PathBuf>,
     /// Workspace-level tasks that apply to all packages.
     #[serde(default, deserialize_with = "deserialize_tasks")]
-    pub tasks: HashMap<String, TaskValue>,
+    pub tasks: FxHashMap<String, TaskValue>,
 }
 
 impl Config {

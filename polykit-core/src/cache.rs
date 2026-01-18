@@ -1,12 +1,14 @@
 //! Caching system for scan results.
 
-use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use bincode;
+use memmap2::{Mmap, MmapMut};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use xxhash_rust::xxh3::xxh3_64;
 
 use crate::error::{Error, Result};
 use crate::package::Package;
@@ -18,7 +20,7 @@ const MAX_SCAN_DEPTH: usize = 3;
 struct CacheEntry {
     version: u32,
     packages: Vec<Package>,
-    mtimes: HashMap<PathBuf, u64>,
+    mtimes: FxHashMap<PathBuf, u64>,
 }
 
 pub struct Cache {
@@ -85,7 +87,26 @@ impl Cache {
             return Ok(None);
         }
 
-        let content = fs::read(&cache_path).map_err(Error::Io)?;
+        let file = File::open(&cache_path).map_err(Error::Io)?;
+        let metadata = file.metadata().map_err(Error::Io)?;
+        
+        if metadata.len() == 0 {
+            self.stats.misses += 1;
+            return Ok(None);
+        }
+
+        let mmap = unsafe {
+            Mmap::map(&file).map_err(|e| Error::Adapter {
+                package: "cache".to_string(),
+                message: format!("Failed to memory-map cache file: {}", e),
+            })?
+        };
+
+        let content = zstd::decode_all(&mmap[..]).map_err(|e| Error::Adapter {
+            package: "cache".to_string(),
+            message: format!("Failed to decompress cache: {}", e),
+        })?;
+
         let entry: CacheEntry = bincode::deserialize(&content).map_err(|e| Error::Adapter {
             package: "cache".to_string(),
             message: format!("Failed to parse cache: {}", e),
@@ -116,31 +137,59 @@ impl Cache {
         };
 
         let cache_path = self.get_cache_path(packages_dir);
-        let content = bincode::serialize(&entry).map_err(|e| Error::Adapter {
+        let serialized = bincode::serialize(&entry).map_err(|e| Error::Adapter {
             package: "cache".to_string(),
             message: format!("Failed to serialize cache: {}", e),
         })?;
 
-        fs::write(&cache_path, content).map_err(Error::Io)?;
+        let compressed = zstd::encode_all(&serialized[..], 3).map_err(|e| Error::Adapter {
+            package: "cache".to_string(),
+            message: format!("Failed to compress cache: {}", e),
+        })?;
+
+        if compressed.len() < 4096 {
+            fs::write(&cache_path, compressed).map_err(Error::Io)?;
+        } else {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&cache_path)
+                .map_err(Error::Io)?;
+
+            file.set_len(compressed.len() as u64).map_err(Error::Io)?;
+
+            let mut mmap = unsafe {
+                MmapMut::map_mut(&file).map_err(|e| Error::Adapter {
+                    package: "cache".to_string(),
+                    message: format!("Failed to memory-map cache file for writing: {}", e),
+                })?
+            };
+
+            mmap.copy_from_slice(&compressed);
+            mmap.flush().map_err(|e| Error::Adapter {
+                package: "cache".to_string(),
+                message: format!("Failed to flush memory-mapped cache: {}", e),
+            })?;
+        }
 
         Ok(())
     }
 
     fn compute_cache_key(&self, packages_dir: &Path) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        packages_dir.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+        let path_bytes = packages_dir.as_os_str().as_encoded_bytes();
+        let hash = xxh3_64(path_bytes);
+        format!("{:x}", hash)
     }
 
-    fn collect_mtimes(&self, packages_dir: &Path) -> Result<HashMap<PathBuf, u64>> {
-        let mut mtimes = HashMap::new();
-        let mut package_dirs = std::collections::HashSet::new();
+    fn collect_mtimes(&self, packages_dir: &Path) -> Result<FxHashMap<PathBuf, u64>> {
+        let mut mtimes = FxHashMap::default();
+        let mut package_dirs = rustc_hash::FxHashSet::default();
 
         for entry in walkdir::WalkDir::new(packages_dir)
             .max_depth(MAX_SCAN_DEPTH)
+            .follow_links(false)
             .into_iter()
             .filter_map(|e| e.ok())
         {
@@ -166,7 +215,6 @@ impl Cache {
                                     .unwrap_or(package_dir)
                                     .to_path_buf();
                                 package_dirs.insert(relative_dir.clone());
-                                // Use a special key format to distinguish directories
                                 let dir_key = relative_dir.join(".dir");
                                 mtimes.insert(dir_key, duration.as_secs());
                             }
@@ -185,8 +233,12 @@ impl Cache {
     fn validate_mtimes(
         &self,
         packages_dir: &Path,
-        cached_mtimes: &HashMap<PathBuf, u64>,
+        cached_mtimes: &FxHashMap<PathBuf, u64>,
     ) -> Result<bool> {
+        if cached_mtimes.is_empty() {
+            return Ok(false);
+        }
+
         let current_mtimes = self.collect_mtimes(packages_dir)?;
 
         if current_mtimes.len() != cached_mtimes.len() {
