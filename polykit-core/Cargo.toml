@@ -31,7 +31,6 @@ memmap2.workspace = true
 sha2.workspace = true
 reqwest.workspace = true
 tar.workspace = true
-async-tar.workspace = true
 async-trait.workspace = true
 
 [dev-dependencies]

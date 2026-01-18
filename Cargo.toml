@@ -49,7 +49,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }
 tar = "0.4"
-async-tar = "0.4"
 async-trait = "0.1"
 axum = "0.7"
 tower = "0.4"

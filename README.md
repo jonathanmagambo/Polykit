@@ -119,7 +119,7 @@ default_parallel = 4
 <h1 align="center">Contributing And License</h1>
 
 > [!IMPORTANT]  
-> The project is in active development and being crafted meticulously. **If you plan to contribute to the project, now is the time to provide a helping hand for the hardworking team**. When it comes to integrating with other programming languages, we focus on Rust first, then gradually make features available in other languages.
+> The project is in active development and being crafted meticulously. **If you plan to contribute to the project, now is the time to provide a helping hand for the hardworking team**. Polykit is written in Rust and orchestrates monorepos across multiple languages (JavaScript, TypeScript, Python, Go, and Rust). We're continuously improving language adapter support and adding new features.
 >
 > In addition, the project uses the **[Apache-2.0 License](LICENSE.md)**, which allows you to:
 > - View the source, learn from it, and use it freely
