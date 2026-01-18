@@ -19,7 +19,15 @@
 
 ## Installation
 
-Install Polykit globally so you can use the `polykit` command from anywhere:
+Install Polykit globally so you can use the `polykit` command from anywhere.
+
+**From crates.io (recommended):**
+
+```bash
+cargo install polykit
+```
+
+**Or build from source:**
 
 ```bash
 git clone https://github.com/jonathanmagambo/polykit.git

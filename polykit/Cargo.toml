@@ -14,8 +14,8 @@ name = "polykit"
 path = "src/main.rs"
 
 [dependencies]
-polykit-core = { path = "../polykit-core" }
-polykit-adapters = { path = "../polykit-adapters" }
+polykit-core = { version = "0.1.0", path = "../polykit-core" }
+polykit-adapters = { version = "0.1.0", path = "../polykit-adapters" }
 clap.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

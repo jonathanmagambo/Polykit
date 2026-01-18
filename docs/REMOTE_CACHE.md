@@ -11,6 +11,15 @@ Self-hosted remote cache system for sharing build artifacts across machines and 
 
 ### 1. Start the Cache Server
 
+Install from crates.io (recommended):
+
+```bash
+cargo install polykit-cache
+polykit-cache --storage-dir ./cache
+```
+
+Or build from source:
+
 ```bash
 # Build the cache server
 cargo build --release --package polykit-cache

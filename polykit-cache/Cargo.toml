@@ -5,13 +5,16 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Self-hosted HTTP cache server for Polykit remote caching"
+keywords = ["monorepo", "cache", "remote-cache", "build-cache"]
+categories = ["development-tools", "web-programming::http-server"]
 
 [[bin]]
 name = "polykit-cache"
 path = "src/main.rs"
 
 [dependencies]
-polykit-core = { path = "../polykit-core" }
+polykit-core = { version = "0.1.0", path = "../polykit-core" }
 axum.workspace = true
 tower.workspace = true
 tower-http.workspace = true
@@ -31,5 +34,4 @@ uuid.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 reqwest.workspace = true
-polykit-core = { path = "../polykit-core" }
 tokio.workspace = true

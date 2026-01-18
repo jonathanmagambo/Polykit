@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Core library for Polykit monorepo orchestration"
+keywords = ["monorepo", "build-tool", "orchestration", "dependencies"]
+categories = ["development-tools"]
 
 [dependencies]
 serde.workspace = true

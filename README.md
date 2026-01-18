@@ -32,6 +32,14 @@ Polykit orchestrates monorepos across multiple languages. It manages dependencie
 
 ## Installation
 
+Install from crates.io (recommended):
+
+```bash
+cargo install polykit
+```
+
+Or build from source:
+
 ```bash
 git clone https://github.com/jonathanmagambo/polykit.git
 cd polykit

@@ -6,6 +6,14 @@ Self-hosted HTTP cache server for Polykit remote caching.
 
 ## Installation
 
+Install from crates.io (recommended):
+
+```bash
+cargo install polykit-cache
+```
+
+Or build from source:
+
 ```bash
 cargo build --release --package polykit-cache
 ```
