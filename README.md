@@ -1,3 +1,8 @@
+[<img alt="github" src="https://img.shields.io/badge/github-jonathanmagambo/polykit-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/jonathanmagambo/polykit)
+[<img alt="crates.io" src="https://img.shields.io/crates/v/polykit.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/polykit)
+[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-polykit-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/polykit)
+[<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/jonathanmagambo/Polykit/rust.yml?branch=main&style=for-the-badge" height="20">](https://github.com/jonathanmagambo/Polykit/actions?query=branch%3Amain)
+
 <div align="center">
   <h1>Polykit</h1>
 </div>
@@ -10,9 +15,6 @@
 
 <div align="center">
   <strong>Fast, language-agnostic monorepo orchestration.</strong>
-  <br><br>
-  
-  [![Status](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml/badge.svg)](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml)
 </div>
 
 ## What is Polykit?
