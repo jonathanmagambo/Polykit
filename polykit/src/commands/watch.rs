@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use owo_colors::OwoColorize;
 use polykit_core::{DependencyGraph, FileWatcher, TaskRunner, WatcherConfig};
+
+use crate::formatting::{print_key_value, print_section_header, print_success, print_warning, SectionStyle};
 
 use super::create_scanner;
 
@@ -30,11 +31,11 @@ pub fn cmd_watch(
 
     let debounce_duration = Duration::from_millis(debounce_ms.unwrap_or(300));
 
-    println!("{}", "[Watch Mode]".bold().cyan());
-    println!("  Watching for changes in: {}", packages_dir.display());
-    println!("  Task: {}", task.bold());
+    print_section_header("Watch Mode", SectionStyle::Primary);
+    print_key_value("Watching", &packages_dir.display().to_string());
+    print_key_value("Task", &task);
     if !packages.is_empty() {
-        println!("  Packages: {}", packages.join(", ").bold());
+        print_key_value("Packages", &packages.join(", "));
     }
     println!("  Press Ctrl+C to stop");
     println!();
@@ -50,7 +51,8 @@ pub fn cmd_watch(
 
     loop {
         if !running.load(Ordering::SeqCst) {
-            println!("\n{}", "Stopping watch mode...".yellow());
+            println!();
+            print_warning("Stopping watch mode...");
             break;
         }
 
@@ -64,7 +66,7 @@ pub fn cmd_watch(
             }
             Ok(None) => {
                 if !affected_packages.is_empty() && last_event_time.elapsed() >= debounce_duration {
-                    println!("{}", "[Change detected, rebuilding...]".bold().yellow());
+                    print_warning("Change detected, rebuilding...");
                     let scanned = scanner.scan()?;
                     let graph = DependencyGraph::new(scanned)?;
 
@@ -91,20 +93,17 @@ pub fn cmd_watch(
                         let mut failed = false;
                         for result in results {
                             if !result.success {
-                                println!(
-                                    "  {} {}",
-                                    "FAILED".red(),
-                                    result.package_name.to_string().bold().red()
-                                );
+                                use crate::formatting::print_error;
+                                print_error(&format!("{} failed", result.package_name));
                                 failed = true;
                             }
                         }
 
                         if !failed {
-                            println!("  {} Rebuild complete", "OK".green());
+                            print_success("Rebuild complete");
                         }
                     } else {
-                        println!("  {} No matching packages to rebuild", "OK".green());
+                        print_success("No matching packages to rebuild");
                     }
                     println!();
 

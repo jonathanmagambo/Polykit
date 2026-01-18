@@ -3,10 +3,12 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use owo_colors::OwoColorize;
+use comfy_table::{Cell, Table};
 use polykit_adapters::get_adapter;
 use polykit_core::release::BumpType;
 use polykit_core::{DependencyGraph, ReleaseEngine};
+
+use crate::formatting::{print_key_value, print_package_list, print_section_header, print_separator_with_spacing, print_success, SectionStyle};
 
 use super::release_reporter::CliReleaseReporter;
 use super::{create_scanner, print_cache_stats};
@@ -32,64 +34,58 @@ pub fn cmd_release(
     );
     let plan = engine.plan_release(&package, bump_type)?;
 
-    if dry_run {
-        println!("{}", "[Release Plan (Dry Run)]".bold().cyan());
+    let title = if dry_run {
+        "Release Plan (Dry Run)"
     } else {
-        println!("{}", "[Release Plan]".bold().cyan());
-    }
-    println!();
+        "Release Plan"
+    };
+    print_section_header(title, SectionStyle::Primary);
 
     if plan.packages.is_empty() {
-        println!("  {} No packages need version bumps", "OK".green());
+        print_success("No packages need version bumps");
         println!();
         return Ok(());
     }
 
-    println!(
-        "  {} {} packages will be updated:",
-        "PACKAGES:".bright_cyan(),
-        plan.packages.len().to_string().bold().cyan()
+    print_key_value(
+        "Packages to update",
+        &plan.packages.len().to_string(),
     );
     println!();
 
+    let mut table = Table::new();
+    table
+        .set_header(vec![
+            Cell::new("Type").add_attribute(comfy_table::Attribute::Bold),
+            Cell::new("Package").add_attribute(comfy_table::Attribute::Bold),
+            Cell::new("Version").add_attribute(comfy_table::Attribute::Bold),
+        ])
+        .load_preset(comfy_table::presets::UTF8_FULL)
+        .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+        .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+
     for pkg in &plan.packages {
         let old_ver = pkg.old_version.as_deref().unwrap_or("(new)");
-        match pkg.bump_type {
-            BumpType::Major => {
-                println!(
-                    "  [{}] {} {} → {}",
-                    "MAJOR".red(),
-                    pkg.name.bold().white(),
-                    old_ver.bright_black(),
-                    pkg.new_version.bold().cyan()
-                );
-            }
-            BumpType::Minor => {
-                println!(
-                    "  [{}] {} {} → {}",
-                    "MINOR".yellow(),
-                    pkg.name.bold().white(),
-                    old_ver.bright_black(),
-                    pkg.new_version.bold().cyan()
-                );
-            }
-            BumpType::Patch => {
-                println!(
-                    "  [{}] {} {} → {}",
-                    "PATCH".green(),
-                    pkg.name.bold().white(),
-                    old_ver.bright_black(),
-                    pkg.new_version.bold().cyan()
-                );
-            }
-        }
+        let version_str = format!("{} → {}", old_ver, pkg.new_version);
+        let (type_label, type_color) = match pkg.bump_type {
+            BumpType::Major => ("MAJOR", comfy_table::Color::Red),
+            BumpType::Minor => ("MINOR", comfy_table::Color::Yellow),
+            BumpType::Patch => ("PATCH", comfy_table::Color::Green),
+        };
+        table.add_row(vec![
+            Cell::new(type_label).fg(type_color),
+            Cell::new(&pkg.name).fg(comfy_table::Color::White),
+            Cell::new(version_str).fg(comfy_table::Color::Cyan),
+        ]);
     }
+
+    println!("{}", table);
     println!();
 
     engine.execute_release(&plan)?;
 
     if !dry_run {
-        println!("  {} Release completed successfully", "OK".green());
+        print_success("Release completed successfully");
     }
     if show_cache_stats {
         print_cache_stats(&scanner);
@@ -112,37 +108,22 @@ pub fn cmd_why(
     let deps = graph.dependencies(&package)?;
     let dependents = graph.dependents(&package)?;
 
-    println!("{}", "[Package Dependencies]".bold().cyan());
-    println!();
-    println!("  Package: {}", package.bold().white());
+    print_section_header("Package Dependencies", SectionStyle::Primary);
+    print_key_value("Package", &package);
+    print_separator_with_spacing();
+
+    print_key_value(
+        "Depends on",
+        &format!("{} packages", deps.len()),
+    );
+    print_package_list(&deps, "");
     println!();
 
-    println!(
-        "  {} Dependencies ({}):",
-        "DEPENDS ON:".bright_cyan(),
-        deps.len().to_string().bold().cyan()
+    print_key_value(
+        "Depended on by",
+        &format!("{} packages", dependents.len()),
     );
-    if deps.is_empty() {
-        println!("     {}", "(none)".bright_black());
-    } else {
-        for dep in deps {
-            println!("     - {}", dep.bold().white());
-        }
-    }
-    println!();
-
-    println!(
-        "  {} Dependents ({}):",
-        "DEPENDED ON BY:".bright_cyan(),
-        dependents.len().to_string().bold().cyan()
-    );
-    if dependents.is_empty() {
-        println!("     {}", "(none)".bright_black());
-    } else {
-        for dep in dependents {
-            println!("     - {}", dep.bold().white());
-        }
-    }
+    print_package_list(&dependents, "");
     println!();
 
     if show_cache_stats {
@@ -165,11 +146,10 @@ pub fn cmd_validate(
     if json {
         println!("{{\"valid\": true}}");
     } else {
-        println!("{}", "[Validation]".bold().cyan());
-        println!();
-        println!("  {} All packages are valid", "OK".green());
-        println!("  {} No circular dependencies detected", "OK".green());
-        println!("  {} Dependency graph is valid", "OK".green());
+        print_section_header("Validation", SectionStyle::Success);
+        print_success("All packages are valid");
+        print_success("No circular dependencies detected");
+        print_success("Dependency graph is valid");
         println!();
     }
 
@@ -199,24 +179,24 @@ pub fn cmd_list(
             .collect();
         println!("{}", serde_json::to_string_pretty(&tasks)?);
     } else {
-        println!("{}", "[Available Tasks]".bold().cyan());
+        print_section_header("Available Tasks", SectionStyle::Primary);
         println!();
 
         if packages.is_empty() {
-            println!("  {} No packages found", "WARNING:".yellow());
+            use crate::formatting::print_warning;
+            print_warning("No packages found");
         } else {
-            for pkg in packages {
-                println!("  {} {}", "PACKAGE:".bright_cyan(), pkg.name.bold().white());
-                if pkg.tasks.is_empty() {
-                    println!("     {}", "(no tasks)".bright_black());
-                } else {
-                    for task in pkg.tasks {
-                        println!("     - {}", task.name.bold());
-                    }
-                }
-                println!();
-            }
+            let package_tasks: Vec<(String, Vec<String>)> = packages
+                .into_iter()
+                .map(|p| {
+                    let task_names: Vec<String> = p.tasks.iter().map(|t| t.name.clone()).collect();
+                    (p.name, task_names)
+                })
+                .collect();
+            use crate::formatting::print_task_table;
+            print_task_table(&package_tasks);
         }
+        println!();
     }
 
     if show_cache_stats {

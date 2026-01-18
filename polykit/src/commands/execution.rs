@@ -5,12 +5,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use anyhow::Result;
-use indicatif::{ProgressBar, ProgressStyle};
+use comfy_table::{Cell, Table};
 use owo_colors::OwoColorize;
 
 use polykit_core::{DependencyGraph, RemoteCache, RemoteCacheConfig, TaskRunner};
 
-use super::{create_scanner, print_cache_stats};
+use crate::formatting::{create_progress_bar, format_duration, print_section_header, print_separator_with_spacing, print_summary_box, print_success, print_warning, SectionStyle, Status};
+
+use super::create_scanner;
 
 fn create_remote_cache(
     url: Option<String>,
@@ -50,12 +52,7 @@ fn run_task_with_progress(
         graph.all_packages().len()
     };
 
-    let pb = ProgressBar::new(packages_to_run as u64);
-    let style = ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-        .unwrap_or_else(|_| ProgressStyle::default_bar())
-        .progress_chars("█▉▊▋▌▍▎▏  ");
-    pb.set_style(style);
+    let pb = create_progress_bar(packages_to_run as u64);
     pb.set_message(progress_msg.to_string());
 
     let mut runner = TaskRunner::new(&packages_dir, graph).with_max_parallel(parallel);
@@ -76,11 +73,11 @@ fn run_task_with_progress(
             task_name,
             packages_opt,
             move |package_name, line, is_stderr| {
-                let prefix = format!("[{}] ", package_name);
+                let prefix = format!("[{}]", package_name);
                 if is_stderr {
-                    eprintln!("{}{}", prefix.bright_black(), line.bright_red());
+                    eprintln!("  {} {}", prefix.bright_black().bold(), line.bright_red());
                 } else {
-                    println!("{}{}", prefix.bright_black(), line);
+                    println!("  {} {}", prefix.bright_black().bold(), line);
                 }
                 if let Ok(pb_guard) = pb_clone.lock() {
                     pb_guard.tick();
@@ -100,43 +97,57 @@ fn print_task_results(
     section_title: &str,
     success_msg: &str,
 ) -> bool {
-    println!("{}", section_title.bold().cyan());
+    print_section_header(section_title, SectionStyle::Primary);
     println!();
 
     let mut failed = false;
     let mut succeeded = 0;
+    let mut table = Table::new();
+    table
+        .set_header(vec![
+            Cell::new("Status").add_attribute(comfy_table::Attribute::Bold),
+            Cell::new("Package").add_attribute(comfy_table::Attribute::Bold),
+            Cell::new("Details").add_attribute(comfy_table::Attribute::Bold),
+        ])
+        .load_preset(comfy_table::presets::UTF8_FULL)
+        .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+        .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+
     for result in results {
         if result.success {
-            println!(
-                "  {} {}",
-                "OK".green(),
-                result.package_name.to_string().bold().white()
-            );
+            table.add_row(vec![
+                Cell::new(Status::Success.symbol()).fg(comfy_table::Color::Green),
+                Cell::new(&result.package_name).fg(comfy_table::Color::White),
+                Cell::new(""),
+            ]);
             succeeded += 1;
         } else {
-            println!(
-                "  {} {}",
-                "FAILED".red(),
-                result.package_name.to_string().bold().red()
-            );
-            if !result.stderr.is_empty() {
-                println!("     {}", result.stderr.trim().bright_red());
-            }
+            let error_msg = if result.stderr.is_empty() {
+                "Task failed".to_string()
+            } else {
+                result.stderr.trim().to_string()
+            };
+            table.add_row(vec![
+                Cell::new(Status::Error.symbol()).fg(comfy_table::Color::Red),
+                Cell::new(&result.package_name).fg(comfy_table::Color::Red),
+                Cell::new(error_msg).fg(comfy_table::Color::Red),
+            ]);
             failed = true;
         }
     }
 
+    println!("{}", table);
     println!();
+
     if failed {
-        println!(
-            "  {} {} succeeded, {} failed",
-            "WARNING:".yellow(),
-            succeeded.to_string().bold().green(),
-            (packages_to_run - succeeded).to_string().bold().red()
-        );
+        print_warning(&format!(
+            "{} succeeded, {} failed",
+            succeeded,
+            packages_to_run - succeeded
+        ));
     } else {
         let msg = success_msg.replace("{}", &succeeded.to_string());
-        println!("  {} {}", "OK".green(), msg.bold().green());
+        print_success(&msg);
     }
 
     failed
@@ -172,8 +183,7 @@ pub fn cmd_build(
         graph.all_packages().len()
     };
 
-    println!("{}", "[Building packages]".bold().cyan());
-    println!();
+    print_section_header("Building packages", SectionStyle::Primary);
 
     let remote_cache = create_remote_cache(remote_cache_url, remote_cache_readonly, no_remote_cache)?;
 
@@ -191,17 +201,27 @@ pub fn cmd_build(
     let failed = print_task_results(
         results,
         packages_to_run,
-        "[Build Results]",
+        "Build Results",
         "All {} packages built successfully",
     );
 
-    println!(
-        "  {} Duration: {:.2}s",
-        "TIME:".bright_black(),
-        start.elapsed().as_secs_f64().to_string().bold()
-    );
+    print_separator_with_spacing();
+
+    let duration_str = format_duration(start.elapsed().as_secs_f64());
+    
     if show_cache_stats {
-        print_cache_stats(&scanner);
+        if let Some(stats) = scanner.cache_stats() {
+            let hit_rate = stats.hit_rate() * 100.0;
+            let cache_str = format!("{:.0}% ({} hits, {} misses)", hit_rate, stats.hits, stats.misses);
+            print_summary_box("Summary", &[
+                ("Duration", &duration_str),
+                ("Cache Hit Rate", &cache_str),
+            ]);
+        } else {
+            print_summary_box("Summary", &[("Duration", &duration_str)]);
+        }
+    } else {
+        print_summary_box("Summary", &[("Duration", &duration_str)]);
     }
     println!();
 
@@ -242,8 +262,7 @@ pub fn cmd_test(
         graph.all_packages().len()
     };
 
-    println!("{}", "[Running tests]".bold().cyan());
-    println!();
+    print_section_header("Running tests", SectionStyle::Primary);
 
     let remote_cache = create_remote_cache(remote_cache_url, remote_cache_readonly, no_remote_cache)?;
 
@@ -261,17 +280,27 @@ pub fn cmd_test(
     let failed = print_task_results(
         results,
         packages_to_run,
-        "[Test Results]",
+        "Test Results",
         "All {} packages passed",
     );
 
-    println!(
-        "  {} Duration: {:.2}s",
-        "TIME:".bright_black(),
-        start.elapsed().as_secs_f64().to_string().bold()
-    );
+    print_separator_with_spacing();
+
+    let duration_str = format_duration(start.elapsed().as_secs_f64());
+    
     if show_cache_stats {
-        print_cache_stats(&scanner);
+        if let Some(stats) = scanner.cache_stats() {
+            let hit_rate = stats.hit_rate() * 100.0;
+            let cache_str = format!("{:.0}% ({} hits, {} misses)", hit_rate, stats.hits, stats.misses);
+            print_summary_box("Summary", &[
+                ("Duration", &duration_str),
+                ("Cache Hit Rate", &cache_str),
+            ]);
+        } else {
+            print_summary_box("Summary", &[("Duration", &duration_str)]);
+        }
+    } else {
+        print_summary_box("Summary", &[("Duration", &duration_str)]);
     }
     println!();
 

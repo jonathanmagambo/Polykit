@@ -3,8 +3,10 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use owo_colors::OwoColorize;
+use comfy_table::{Cell, Table};
 use polykit_core::{ChangeDetector, DependencyGraph};
+
+use crate::formatting::{print_key_value, print_package_list, print_package_table, print_section_header, print_success, print_warning, SectionStyle};
 
 use super::{create_scanner, print_cache_stats};
 
@@ -20,26 +22,21 @@ pub fn cmd_scan(
     if json {
         println!("{}", serde_json::to_string_pretty(&packages)?);
     } else {
-        println!("{}", "[Scanning packages...]".bold().cyan());
-        println!();
+        print_section_header("Scanning packages", SectionStyle::Primary);
 
         if packages.is_empty() {
-            println!("  {} No packages found", "WARNING:".yellow());
+            print_warning("No packages found");
         } else {
-            println!(
-                "  {} Found {} {}",
-                "OK".green(),
-                packages.len().to_string().bold().cyan(),
-                "packages".bold()
+            print_key_value(
+                "Found",
+                &format!("{} packages", packages.len()),
             );
             println!();
-            for pkg in packages {
-                println!(
-                    "  {} {}",
-                    pkg.name.bold().white(),
-                    format!("({})", pkg.language.as_str()).bright_black()
-                );
-            }
+            let package_list: Vec<(String, String)> = packages
+                .into_iter()
+                .map(|p| (p.name, p.language.as_str().to_string()))
+                .collect();
+            print_package_table(&package_list);
         }
         println!();
     }
@@ -72,25 +69,33 @@ pub fn cmd_graph(
         });
         println!("{}", serde_json::to_string_pretty(&graph_data)?);
     } else {
-        println!("{}", "[Dependency Graph]".bold().cyan());
-        println!();
+        print_section_header("Dependency Graph", SectionStyle::Primary);
 
         if order.is_empty() {
-            println!("  {} No packages found", "WARNING:".yellow());
+            print_warning("No packages found");
         } else {
-            println!(
-                "  {} Topological order ({} packages):",
-                "OK".green(),
-                order.len().to_string().bold().cyan()
+            print_key_value(
+                "Topological order",
+                &format!("{} packages", order.len()),
             );
             println!();
+            let mut table = Table::new();
+            table
+                .set_header(vec![
+                    Cell::new("#").add_attribute(comfy_table::Attribute::Bold),
+                    Cell::new("Package").add_attribute(comfy_table::Attribute::Bold),
+                ])
+                .load_preset(comfy_table::presets::UTF8_FULL)
+                .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+                .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+
             for (idx, pkg) in order.iter().enumerate() {
-                println!(
-                    "  {} {}",
-                    format!("{:2}", idx + 1).bright_black(),
-                    pkg.bold().white()
-                );
+                table.add_row(vec![
+                    Cell::new((idx + 1).to_string()).fg(comfy_table::Color::DarkGrey),
+                    Cell::new(pkg).fg(comfy_table::Color::White),
+                ]);
             }
+            println!("{}", table);
         }
         println!();
     }
@@ -125,22 +130,15 @@ pub fn cmd_affected(
         ChangeDetector::detect_affected_packages(&graph, &file_paths, &packages_dir)?
     };
 
-    println!("{}", "[Affected Packages]".bold().cyan());
-    println!();
+    print_section_header("Affected Packages", SectionStyle::Primary);
 
     if affected.is_empty() {
-        println!("  {} No affected packages", "OK".green());
+        print_success("No affected packages");
     } else {
-        println!(
-            "  {} {} {}",
-            "WARNING:".yellow(),
-            affected.len().to_string().bold().yellow(),
-            "packages affected".bold()
-        );
+        print_warning(&format!("{} packages affected", affected.len()));
         println!();
-        for pkg in affected {
-            println!("  - {}", pkg.bold().yellow());
-        }
+        let affected_vec: Vec<String> = affected.into_iter().collect();
+        print_package_list(&affected_vec, "");
     }
     println!();
 

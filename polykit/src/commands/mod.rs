@@ -8,8 +8,9 @@ mod watch;
 
 use std::path::PathBuf;
 
-use owo_colors::OwoColorize;
 use polykit_core::Scanner;
+
+use crate::formatting::print_summary_box;
 
 pub use discovery::{cmd_affected, cmd_graph, cmd_scan};
 pub use execution::{cmd_build, cmd_test};
@@ -27,12 +28,13 @@ fn create_scanner(packages_dir: &PathBuf, no_cache: bool) -> Scanner {
 fn print_cache_stats(scanner: &Scanner) {
     if let Some(stats) = scanner.cache_stats() {
         let hit_rate = stats.hit_rate() * 100.0;
-        println!(
-            "  {} Cache: {:.0}% hit rate ({} hits, {} misses)",
-            "CACHE:".bright_black(),
-            hit_rate,
-            stats.hits.to_string().bold(),
-            stats.misses.to_string().bold()
+        print_summary_box(
+            "Cache Statistics",
+            &[
+                ("Hit Rate", &format!("{:.0}%", hit_rate)),
+                ("Hits", &stats.hits.to_string()),
+                ("Misses", &stats.misses.to_string()),
+            ],
         );
         println!();
     }

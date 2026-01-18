@@ -1,4 +1,5 @@
 mod commands;
+mod formatting;
 
 use std::path::PathBuf;
 
