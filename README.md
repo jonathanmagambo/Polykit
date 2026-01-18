@@ -116,6 +116,18 @@ cache_dir = ".polykit/cache"
 default_parallel = 4
 ```
 
-<h1 align="center">Contributing and License</h1>
+<h1 align="center">Contributing And License</h1>
 
-Polykit is free and open source, released under the **Apache-2.0 License**. Contributions are welcome! ❤️
+> [!IMPORTANT]  
+> The project is in active development and being crafted meticulously. **If you plan to contribute to the project, now is the time to provide a helping hand for the hardworking team**. When it comes to integrating with other programming languages, we focus on Rust first, then gradually make features available in other languages.
+>
+> In addition, the project uses the **[Apache-2.0 License](LICENSE.md)**, which allows you to:
+> - View the source, learn from it, and use it freely
+> - Modify and distribute the software
+> - Use it in commercial and private projects
+> - The only requirement is to include the license and copyright notice
+
+When it comes to contributing and forking, Polykit is free and open source to use, released under the <strong>Apache-2.0 License</strong>. 
+Contributions are welcome with wide open arms as Polykit is looking to foster a community. Proceed to take a look at 
+[CONTRIBUTING.md](./CONTRIBUTING.md) for more information on how to get started as well as the codebase to learn
+from it. We sincerely and deeply are grateful and thankful for your efforts.
