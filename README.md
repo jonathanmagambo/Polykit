@@ -3,9 +3,9 @@
 </div>
 
 <h3 align="center">
-  <b>Getting Started</b>
+  <a href="docs/GETTING_STARTED.md"><b>Getting Started</b></a>
   &nbsp;&#183;&nbsp;
-  <b>Examples</b>
+  <a href="docs/EXAMPLES.md"><b>Examples</b></a>
 </h3>
 
 <div align="center">
@@ -223,16 +223,6 @@ build = "cargo build --release"
 test = "cargo test"
 lint = "cargo clippy"
 ```
-
-<h1 align="center">Documentation</h1>
-
-<div align="center">
-
-**Getting Started** – Installation, first project, CLI walkthrough.
-
-**Examples** – Real-world usage examples and patterns.
-
-</div>
 
 <h1 align="center">Contributing and License</h1>
 
