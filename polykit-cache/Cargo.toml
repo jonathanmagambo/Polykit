@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Self-hosted HTTP cache server for Polykit remote caching"
 keywords = ["monorepo", "cache", "remote-cache", "build-cache"]
 categories = ["development-tools", "web-programming::http-server"]
+readme = "README.md"
 
 [[bin]]
 name = "polykit-cache"
