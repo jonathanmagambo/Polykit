@@ -131,3 +131,5 @@ When it comes to contributing and forking, Polykit is free and open source to us
 Contributions are welcome with wide open arms as Polykit is looking to foster a community. Proceed to take a look at 
 [CONTRIBUTING.md](./CONTRIBUTING.md) for more information on how to get started as well as the codebase to learn
 from it. We sincerely and deeply are grateful and thankful for your efforts.
+
+![Alt](https://repobeats.axiom.co/api/embed/9ceb1134a6a3465f667ee910f58adec438bd48a2.svg "Repobeats analytics image")
