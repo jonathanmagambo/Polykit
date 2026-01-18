@@ -16,23 +16,8 @@
 </h3>
 
 <div align="center">
-  <strong>Fast, language-agnostic monorepo orchestration.</strong>
+  <strong>Fast, lightweight, monorepo orchestrator.</strong>
 </div>
-
-## What is Polykit?
-
-Polykit orchestrates monorepos across multiple languages. It manages dependencies, executes tasks in order, and handles versioning.
-
-**Think of Polykit as the brain that orchestrates your monorepo: it doesn't manage dependencies, it orchestrates them.**
-
-<h1 align="center">Goals</h1>
-
-- ⚡ **Fast** - Parallel execution, smart caching, optimized for 10k+ packages
-- 🔗 **Cross-language** - Works with JavaScript, TypeScript, Python, Go, and Rust
-- 📊 **Graph-first** - Dependency-driven execution ensures correct order
-- 🎯 **Simple** - Minimal TOML configuration, convention over complexity
-- 🛡️ **Safe** - Deterministic runs, automatic cycle detection
-- 🚀 **Zero overhead** - Delegates to native tools, no reinventing wheels
 
 ## Installation
 
