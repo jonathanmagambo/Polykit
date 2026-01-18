@@ -1,4 +1,6 @@
 <div align="center">
+  <img src="assets/logo/logo.png" alt="Polykit Logo" width="200">
+  
   <h1>Polykit</h1>
   
   [<img alt="github" src="https://img.shields.io/badge/github-jonathanmagambo/polykit-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/jonathanmagambo/polykit)
