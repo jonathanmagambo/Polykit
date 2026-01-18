@@ -41,7 +41,7 @@ fn generate_packages(count: usize, deps_per_package: usize) -> Vec<Package> {
 fn benchmark_graph_construction(c: &mut Criterion) {
     let mut group = c.benchmark_group("graph_construction");
 
-    for count in [100, 500, 1000] {
+    for count in [100, 500, 1000, 2000, 5000] {
         group.bench_function(format!("{}_packages", count), |b| {
             let packages = generate_packages(count, 3);
             b.iter(|| black_box(DependencyGraph::new(packages.clone()).unwrap()));
@@ -54,7 +54,7 @@ fn benchmark_graph_construction(c: &mut Criterion) {
 fn benchmark_package_lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("package_lookup");
 
-    for count in [100, 500, 1000] {
+    for count in [100, 500, 1000, 2000, 5000] {
         let packages = generate_packages(count, 3);
         let graph = DependencyGraph::new(packages).unwrap();
 
@@ -74,7 +74,7 @@ fn benchmark_package_lookup(c: &mut Criterion) {
 fn benchmark_topological_order(c: &mut Criterion) {
     let mut group = c.benchmark_group("topological_order");
 
-    for count in [100, 500, 1000] {
+    for count in [100, 500, 1000, 2000, 5000] {
         let packages = generate_packages(count, 3);
         let graph = DependencyGraph::new(packages).unwrap();
 
@@ -91,7 +91,7 @@ fn benchmark_topological_order(c: &mut Criterion) {
 fn benchmark_dependency_levels(c: &mut Criterion) {
     let mut group = c.benchmark_group("dependency_levels");
 
-    for count in [100, 500, 1000] {
+    for count in [100, 500, 1000, 2000, 5000] {
         let packages = generate_packages(count, 3);
         let graph = DependencyGraph::new(packages).unwrap();
 
@@ -108,10 +108,10 @@ fn benchmark_dependency_levels(c: &mut Criterion) {
 fn benchmark_affected_packages(c: &mut Criterion) {
     let mut group = c.benchmark_group("affected_packages");
 
-    for count in [100, 500, 1000] {
+    for count in [100, 500, 1000, 2000, 5000] {
         let packages = generate_packages(count, 3);
         let graph = DependencyGraph::new(packages).unwrap();
-        let changed = vec!["package-0".to_string(), "package-100".to_string()];
+        let changed = vec!["package-0".to_string(), format!("package-{}", count / 10)];
 
         group.bench_function(format!("{}_packages", count), |b| {
             b.iter(|| {
@@ -126,7 +126,7 @@ fn benchmark_affected_packages(c: &mut Criterion) {
 fn benchmark_scanner_with_many_packages(c: &mut Criterion) {
     let mut group = c.benchmark_group("scanner");
 
-    for count in [50, 200] {
+    for count in [50, 200, 1000, 2000, 5000] {
         let temp_dir = TempDir::new().unwrap();
         let packages_dir = temp_dir.path().join("packages");
         std::fs::create_dir_all(&packages_dir).unwrap();

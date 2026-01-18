@@ -45,7 +45,7 @@ impl Language {
 }
 
 /// A task that can be executed for a package.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
     pub name: String,
     pub command: String,

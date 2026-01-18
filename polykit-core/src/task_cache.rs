@@ -25,6 +25,7 @@ struct TaskCacheEntry {
 }
 
 /// Caches task execution results for incremental builds.
+#[derive(Clone)]
 pub struct TaskCache {
     cache_dir: PathBuf,
 }
@@ -87,10 +88,17 @@ impl TaskCache {
         }
 
         let compressed = fs::read(&cache_path).map_err(Error::Io)?;
-        let content = zstd::decode_all(&compressed[..]).map_err(|e| Error::Adapter {
-            package: "task-cache".to_string(),
-            message: format!("Failed to decompress task cache: {}", e),
-        })?;
+        let content = if compressed.len() < 1024 {
+            lz4_flex::decompress_size_prepended(&compressed).map_err(|e| Error::Adapter {
+                package: "task-cache".to_string(),
+                message: format!("Failed to decompress task cache (LZ4): {}", e),
+            })?
+        } else {
+            zstd::decode_all(&compressed[..]).map_err(|e| Error::Adapter {
+                package: "task-cache".to_string(),
+                message: format!("Failed to decompress task cache (zstd): {}", e),
+            })?
+        };
 
         let entry: TaskCacheEntry = bincode::deserialize(&content).map_err(|e| Error::Adapter {
             package: "task-cache".to_string(),
@@ -157,10 +165,14 @@ impl TaskCache {
             message: format!("Failed to serialize task cache: {}", e),
         })?;
 
-        let compressed = zstd::encode_all(&serialized[..], 3).map_err(|e| Error::Adapter {
-            package: "task-cache".to_string(),
-            message: format!("Failed to compress task cache: {}", e),
-        })?;
+        let compressed = if serialized.len() < 1024 {
+            lz4_flex::compress_prepend_size(&serialized)
+        } else {
+            zstd::encode_all(&serialized[..], 3).map_err(|e| Error::Adapter {
+                package: "task-cache".to_string(),
+                message: format!("Failed to compress task cache: {}", e),
+            })?
+        };
 
         fs::write(&cache_path, compressed).map_err(Error::Io)?;
 

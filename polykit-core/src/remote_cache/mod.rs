@@ -147,9 +147,10 @@ impl RemoteCache {
     ) -> Result<CacheKey> {
         use std::collections::BTreeMap;
         use std::env;
-        use std::fs;
+        use std::path::PathBuf;
         use sha2::{Digest, Sha256};
         use walkdir::WalkDir;
+        use rayon::prelude::*;
 
         // Build dependency graph hash
         let deps = graph.dependencies(&package.name).unwrap_or_default();
@@ -169,42 +170,46 @@ impl RemoteCache {
             }
         }
 
-        // Collect input file hashes
+        // Collect input file hashes in parallel using BLAKE3
         let mut input_file_hashes = rustc_hash::FxHashMap::default();
         if !self.config.input_files.is_empty() {
-            for pattern in &self.config.input_files {
-                // Simple glob matching (can be enhanced)
-                let pattern_path = package_path.join(pattern);
-                if pattern_path.exists() {
-                    if pattern_path.is_file() {
-                        if let Ok(content) = fs::read(&pattern_path) {
-                            let mut hasher = Sha256::new();
-                            hasher.update(&content);
-                            let hash = format!("{:x}", hasher.finalize());
-                            input_file_hashes.insert(
-                                pattern_path
-                                    .strip_prefix(package_path)
-                                    .unwrap_or(&pattern_path)
-                                    .to_path_buf(),
-                                hash,
-                            );
+            let files_to_hash: Vec<PathBuf> = self.config.input_files
+                .par_iter()
+                .flat_map(|pattern| {
+                    let pattern_path = package_path.join(pattern);
+                    if pattern_path.exists() {
+                        if pattern_path.is_file() {
+                            vec![pattern_path]
+                        } else if pattern_path.is_dir() {
+                            WalkDir::new(&pattern_path)
+                                .into_iter()
+                                .filter_map(|e| e.ok())
+                                .filter(|e| e.file_type().is_file())
+                                .map(|e| e.path().to_path_buf())
+                                .collect()
+                        } else {
+                            Vec::new()
                         }
-                    } else if pattern_path.is_dir() {
-                        // Walk directory
-                        for entry in WalkDir::new(&pattern_path).into_iter().flatten() {
-                            if entry.file_type().is_file() {
-                                if let Ok(content) = fs::read(entry.path()) {
-                                    let mut hasher = Sha256::new();
-                                    hasher.update(&content);
-                                    let hash = format!("{:x}", hasher.finalize());
-                                    if let Ok(relative) = entry.path().strip_prefix(package_path) {
-                                        input_file_hashes.insert(relative.to_path_buf(), hash);
-                                    }
-                                }
-                            }
-                        }
+                    } else {
+                        Vec::new()
                     }
-                }
+                })
+                .collect();
+
+            let hashed_files: Vec<(PathBuf, String)> = files_to_hash
+                .into_par_iter()
+                .filter_map(|file_path| {
+                    let hash = Self::hash_file_fast(&file_path).ok()?;
+                    let relative = file_path
+                        .strip_prefix(package_path)
+                        .unwrap_or(&file_path)
+                        .to_path_buf();
+                    Some((relative, hash))
+                })
+                .collect();
+
+            for (path, hash) in hashed_files {
+                input_file_hashes.insert(path, hash);
             }
         }
 
@@ -232,6 +237,33 @@ impl RemoteCache {
     /// Returns the configuration.
     pub fn config(&self) -> &RemoteCacheConfig {
         &self.config
+    }
+
+    fn hash_file_fast(path: &std::path::Path) -> Result<String> {
+        use std::fs::File;
+        use std::io::{BufReader, Read};
+        use blake3::Hasher;
+
+        let file = File::open(path).map_err(|e| crate::error::Error::Adapter {
+            package: "remote-cache".to_string(),
+            message: format!("Failed to open file for hashing: {}", e),
+        })?;
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let mut hasher = Hasher::new();
+        let mut buffer = vec![0u8; 64 * 1024];
+
+        loop {
+            let bytes_read = reader.read(&mut buffer).map_err(|e| crate::error::Error::Adapter {
+                package: "remote-cache".to_string(),
+                message: format!("Failed to read file for hashing: {}", e),
+            })?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        Ok(hasher.finalize().to_hex().to_string())
     }
 }
 

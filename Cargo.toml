@@ -8,7 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Polykit Contributors"]
 license = "Apache-2.0"
@@ -26,6 +26,7 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2.4"
+jwalk = "0.8"
 regex = "1.10"
 semver = "1.0"
 tempfile = "3.10"
@@ -44,9 +45,11 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 git2 = "0.19"
 mimalloc = { version = "0.1", default-features = false }
 zstd = "0.13"
+lz4_flex = "0.11"
 memmap2 = "0.9"
 criterion = { version = "0.5", features = ["html_reports"] }
 sha2 = "0.10"
+blake3 = "1.5"
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }
 tar = "0.4"
 async-trait = "0.1"
@@ -54,6 +57,9 @@ axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["compression-gzip", "trace"] }
 uuid = { version = "1.0", features = ["v4"] }
+once_cell = "1.19"
+dashmap = "5.5"
+crossbeam = "0.8"
 
 [profile.release]
 opt-level = 3

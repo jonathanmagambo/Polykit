@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
-use walkdir::WalkDir;
+use jwalk::WalkDir as JWalkDir;
+use memmap2::Mmap;
+use std::fs::File;
 
 use crate::cache::Cache;
 use crate::config::{Config, WorkspaceConfig};
@@ -155,9 +157,10 @@ impl Scanner {
         let workspace_config = Arc::new(self.workspace_config.clone());
         let packages_dir = Arc::new(self.packages_dir.clone());
 
-        let config_files: Vec<PathBuf> = WalkDir::new(&self.packages_dir)
+        let config_files: Vec<PathBuf> = JWalkDir::new(&self.packages_dir)
             .max_depth(2)
             .follow_links(false)
+            .parallelism(jwalk::Parallelism::RayonNewPool(rayon::current_num_threads()))
             .into_iter()
             .filter_map(|e| {
                 let entry = e.ok()?;
@@ -180,8 +183,7 @@ impl Scanner {
                     .parent()
                     .ok_or_else(|| crate::error::Error::ConfigNotFound(config_path.clone()))?;
 
-                let config_content = std::fs::read_to_string(&config_path)?;
-                let config: Config = toml::from_str(&config_content)?;
+                let config = Self::read_config_mmap(&config_path)?;
 
                 crate::command_validator::CommandValidator::validate_identifier(
                     &config.name,
@@ -247,4 +249,72 @@ impl Scanner {
         }
         Ok(map)
     }
+
+    fn read_config_mmap(path: &Path) -> Result<Config> {
+        let file = File::open(path)?;
+        let metadata = file.metadata()?;
+
+        if metadata.len() > 4096 {
+            let mmap = unsafe { Mmap::map(&file).map_err(crate::error::Error::Io)? };
+            let s = std::str::from_utf8(&mmap)
+                .map_err(|e| crate::error::Error::Adapter {
+                    package: "scanner".to_string(),
+                    message: format!("Invalid UTF-8 in config file: {}", e),
+                })?;
+            Ok(toml::from_str(s)?)
+        } else {
+            let config_content = std::fs::read_to_string(path)?;
+            Ok(toml::from_str(&config_content)?)
+        }
+    }
+
+    /// Scans packages and returns both the packages and detected changes.
+    ///
+    /// Useful for incremental graph updates.
+    pub fn scan_with_changes(
+        &mut self,
+        old_packages: &FxHashMap<String, Package>,
+    ) -> Result<(Vec<Package>, crate::graph::GraphChange)> {
+        let new_packages = self.scan_as_map()?;
+        let change = detect_graph_changes(old_packages, &new_packages);
+        Ok((new_packages.values().cloned().collect(), change))
+    }
+}
+
+/// Detects changes between old and new package sets.
+pub fn detect_graph_changes(
+    old_packages: &FxHashMap<String, Package>,
+    new_packages: &FxHashMap<String, Package>,
+) -> crate::graph::GraphChange {
+    let mut change = crate::graph::GraphChange {
+        added: Vec::new(),
+        modified: Vec::new(),
+        removed: Vec::new(),
+        dependency_changes: Vec::new(),
+    };
+
+    for (name, new_pkg) in new_packages {
+        match old_packages.get(name) {
+            Some(old_pkg) => {
+                if old_pkg.deps != new_pkg.deps || old_pkg.tasks != new_pkg.tasks {
+                    change.modified.push(new_pkg.clone());
+                    if old_pkg.deps != new_pkg.deps {
+                        change.dependency_changes.push((
+                            name.clone(),
+                            new_pkg.deps.iter().cloned().collect(),
+                        ));
+                    }
+                }
+            }
+            None => change.added.push(new_pkg.clone()),
+        }
+    }
+
+    for name in old_packages.keys() {
+        if !new_packages.contains_key(name) {
+            change.removed.push(name.clone());
+        }
+    }
+
+    change
 }

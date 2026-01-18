@@ -6,6 +6,7 @@ use crate::error::{Error, Result};
 ///
 /// This validator checks for dangerous patterns that could allow command
 /// injection or arbitrary code execution.
+#[derive(Clone)]
 pub struct CommandValidator {
     allow_shell: bool,
 }

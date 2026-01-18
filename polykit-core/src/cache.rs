@@ -268,42 +268,39 @@ impl Cache {
         }
 
         let packages_dir = packages_dir.to_path_buf();
+        let package_count_key_clone = package_count_key.clone();
 
-        for (path, cached_time) in cached_mtimes {
-            if path == &package_count_key {
-                continue;
-            }
-
-            let path_to_check = if path.file_name().and_then(|n| n.to_str()) == Some(".dir") {
-                if let Some(parent) = path.parent() {
-                    packages_dir.join(parent)
+        let validation_results: Vec<bool> = cached_mtimes
+            .par_iter()
+            .filter(|(path, _)| path != &&package_count_key_clone)
+            .map(|(path, cached_time)| {
+                let path_to_check = if path.file_name().and_then(|n| n.to_str()) == Some(".dir") {
+                    if let Some(parent) = path.parent() {
+                        packages_dir.join(parent)
+                    } else {
+                        packages_dir.join(path)
+                    }
                 } else {
                     packages_dir.join(path)
-                }
-            } else {
-                packages_dir.join(path)
-            };
+                };
 
-            let is_valid = if let Ok(metadata) = path_to_check.metadata() {
-                if let Ok(mtime) = metadata.modified() {
-                    if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
-                        duration.as_secs() == *cached_time
+                if let Ok(metadata) = path_to_check.metadata() {
+                    if let Ok(mtime) = metadata.modified() {
+                        if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
+                            duration.as_secs() == *cached_time
+                        } else {
+                            false
+                        }
                     } else {
                         false
                     }
                 } else {
                     false
                 }
-            } else {
-                false
-            };
+            })
+            .collect();
 
-            if !is_valid {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+        Ok(validation_results.iter().all(|&valid| valid))
     }
 
     fn count_packages_fast(&self, packages_dir: &Path) -> Result<u64> {
