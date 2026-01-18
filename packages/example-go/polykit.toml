@@ -1,0 +1,10 @@
+name = "example-go"
+language = "go"
+public = true
+
+[deps]
+internal = []
+
+[tasks]
+build = "go build ./..."
+test = "go test ./..."

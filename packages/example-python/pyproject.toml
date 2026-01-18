@@ -1,0 +1,7 @@
+[project]
+name = "example-python"
+version = "0.1.0"
+description = "Example Python package"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

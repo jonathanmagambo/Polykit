@@ -1,0 +1,10 @@
+name = "example-python"
+language = "python"
+public = true
+
+[deps]
+internal = []
+
+[tasks]
+build = "python -m build"
+test = "pytest"

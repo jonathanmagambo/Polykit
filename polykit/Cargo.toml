@@ -1,0 +1,27 @@
+[package]
+name = "polykit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "polykit"
+path = "src/main.rs"
+
+[dependencies]
+polykit-core = { path = "../polykit-core" }
+polykit-adapters = { path = "../polykit-adapters" }
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rayon.workspace = true
+petgraph.workspace = true
+serde_json.workspace = true
+owo-colors.workspace = true
+indicatif.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

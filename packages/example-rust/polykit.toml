@@ -1,0 +1,10 @@
+name = "example-rust"
+language = "rust"
+public = true
+
+[deps]
+internal = []
+
+[tasks]
+build = "cargo build"
+test = "cargo test"

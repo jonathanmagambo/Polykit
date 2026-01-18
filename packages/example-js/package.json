@@ -1,0 +1,9 @@
+{
+  "name": "example-js",
+  "version": "1.0.0",
+  "description": "Example JavaScript package",
+  "scripts": {
+    "build": "echo 'Building JS package'",
+    "test": "echo 'Testing JS package'"
+  }
+}

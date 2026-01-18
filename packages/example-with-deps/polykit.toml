@@ -1,0 +1,10 @@
+name = "example-with-deps"
+language = "js"
+public = false
+
+[deps]
+internal = ["example-js"]
+
+[tasks]
+build = "npm run build"
+test = "npm test"

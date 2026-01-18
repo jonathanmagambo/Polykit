@@ -1,0 +1,9 @@
+{
+  "name": "example-with-deps",
+  "version": "0.1.0",
+  "description": "Example package with dependencies",
+  "scripts": {
+    "build": "echo 'Building package with deps'",
+    "test": "echo 'Testing package with deps'"
+  }
+}
