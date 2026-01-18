@@ -142,7 +142,9 @@ impl Scanner {
             })
             .collect();
 
-        packages
+        let mut packages = packages?;
+        packages.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(packages)
     }
 
     pub fn scan_as_map(&mut self) -> Result<HashMap<String, Package>> {
