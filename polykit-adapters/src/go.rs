@@ -189,7 +189,7 @@ mod tests {
         let package_dir = temp_dir.path();
         fs::write(package_dir.join("go.mod"), "module test").unwrap();
 
-        let sig = repo.signature().unwrap();
+        let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
         let mut index = repo.index().unwrap();
         index.add_all(["*"], git2::IndexAddOption::DEFAULT, None).unwrap();
         index.write().unwrap();
@@ -219,7 +219,7 @@ mod tests {
         let package_dir = temp_dir.path();
         fs::write(package_dir.join("go.mod"), "module test").unwrap();
 
-        let sig = repo.signature().unwrap();
+        let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
         let mut index = repo.index().unwrap();
         index.add_all(["*"], git2::IndexAddOption::DEFAULT, None).unwrap();
         index.write().unwrap();
