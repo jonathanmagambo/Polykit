@@ -23,17 +23,12 @@ Polykit is a production-grade monorepo orchestration tool written in Rust. It ma
 
 <h1 align="center">Goals</h1>
 
-⚡ **Fast** Parallel execution, smart caching, optimized graph operations
-
-🔗 **Cross-language** Works with JavaScript, TypeScript, Python, Go, and Rust
-
-📊 **Graph-first** Dependency relationships drive all operations
-
-🎯 **Simple** Minimal TOML configuration, convention over configuration
-
-🛡️ **Safe** Deterministic execution, circular dependency detection
-
-🚀 **Zero overhead** Delegates to native tools, no dependency installation logic
+- ⚡ **Fast** Parallel execution, smart caching, optimized graph operations
+- 🔗 **Cross-language** JavaScript/TypeScript, Python, Go, Rust
+- 📊 **Graph-first** Dependency-driven execution
+- 🎯 **Simple** Minimal TOML, convention over configuration
+- 🛡️ **Safe** Deterministic runs, cycle detection
+- 🚀 **Zero overhead** Delegates to native tools
 
 <h1 align="center">Quick Start</h1>
 
@@ -78,35 +73,23 @@ polykit watch build
 
 <h1 align="center">Commands</h1>
 
-**`polykit scan`** Discover packages across your monorepo
-
-**`polykit graph`** Visualize dependency relationships
-
-**`polykit affected`** Find packages affected by changes (git-aware)
-
-**`polykit build`** Execute build tasks in dependency order
-
-**`polykit test`** Run tests with parallel execution
-
-**`polykit release`** Plan and execute semantic version bumps
-
-**`polykit watch`** Watch for changes and rebuild automatically
-
-**`polykit why`** Show dependency relationships for a package
-
-**`polykit validate`** Validate configuration and dependency graph
-
-**`polykit list`** List available tasks per package
+- **`polykit scan`** Discover packages
+- **`polykit graph`** Show dependency order
+- **`polykit affected`** Find impacted packages (git-aware)
+- **`polykit build`** Run build tasks
+- **`polykit test`** Run tests
+- **`polykit release`** Plan/execute bumps
+- **`polykit watch`** Rebuild on changes
+- **`polykit why`** Explain relationships
+- **`polykit validate`** Validate config/graph
+- **`polykit list`** List tasks
 
 <h1 align="center">Supported Languages</h1>
 
-**JavaScript/TypeScript** Reads `package.json`, bumps `version`
-
-**Python** Reads `pyproject.toml`, supports Poetry and PEP 621
-
-**Go** Detects `go.mod` (versioning not supported; Go uses semantic import versioning)
-
-**Rust** Reads `Cargo.toml`, bumps `package.version`
+- **JavaScript/TypeScript** Reads `package.json`, bumps `version`
+- **Python** Reads `pyproject.toml` (Poetry + PEP 621)
+- **Go** Detects `go.mod` (no version bumps)
+- **Rust** Reads `Cargo.toml`, bumps `package.version`
 
 Language adapters are pluggable—add support for any language by implementing the `LanguageAdapter` trait.
 
