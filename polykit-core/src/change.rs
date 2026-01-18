@@ -106,12 +106,10 @@ impl ChangeDetector {
             message: format!("Failed to open git repository: {}", e),
         })?;
 
-        let base_obj = repo
-            .revparse_single(base)
-            .map_err(|e| Error::Adapter {
-                package: "change-detection".to_string(),
-                message: format!("Failed to parse git reference '{}': {}", base, e),
-            })?;
+        let base_obj = repo.revparse_single(base).map_err(|e| Error::Adapter {
+            package: "change-detection".to_string(),
+            message: format!("Failed to parse git reference '{}': {}", base, e),
+        })?;
 
         let base_tree = base_obj.peel_to_tree().map_err(|e| Error::Adapter {
             package: "change-detection".to_string(),
@@ -127,12 +125,10 @@ impl ChangeDetector {
             message: format!("Failed to get HEAD: {}", e),
         })?;
 
-        let head_tree = head
-            .peel_to_tree()
-            .map_err(|e| Error::Adapter {
-                package: "change-detection".to_string(),
-                message: format!("Failed to get tree from HEAD: {}", e),
-            })?;
+        let head_tree = head.peel_to_tree().map_err(|e| Error::Adapter {
+            package: "change-detection".to_string(),
+            message: format!("Failed to get tree from HEAD: {}", e),
+        })?;
 
         let diff = repo
             .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))

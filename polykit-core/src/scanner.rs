@@ -158,15 +158,18 @@ impl Scanner {
             .max_depth(2)
             .follow_links(false)
             .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let name_bytes = e.file_name().as_encoded_bytes();
-                simd_utils::fast_str_eq(
+            .filter_map(|e| {
+                let entry = e.ok()?;
+                let name_bytes = entry.file_name().as_encoded_bytes();
+                if simd_utils::fast_str_eq(
                     std::str::from_utf8(name_bytes).unwrap_or(""),
-                    "polykit.toml"
-                )
+                    "polykit.toml",
+                ) {
+                    Some(entry.path().to_path_buf())
+                } else {
+                    None
+                }
             })
-            .map(|e| e.path().to_path_buf())
             .collect();
 
         let packages: Result<Vec<Package>> = config_files

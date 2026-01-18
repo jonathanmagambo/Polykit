@@ -68,11 +68,11 @@ fn fast_str_eq_simd_aarch64(a: &[u8], b: &[u8]) -> bool {
             let b_chunk = vld1q_u8(b.as_ptr().add(offset));
             let cmp = vceqq_u8(a_chunk, b_chunk);
             let mask = vminvq_u8(cmp);
-            
+
             if mask != 255 {
                 return false;
             }
-            
+
             offset += 16;
         }
 
@@ -99,11 +99,11 @@ unsafe fn fast_str_eq_simd_x86(a: &[u8], b: &[u8]) -> bool {
         let b_chunk = _mm_loadu_si128(b.as_ptr().add(offset) as *const __m128i);
         let cmp = _mm_cmpeq_epi8(a_chunk, b_chunk);
         let mask = _mm_movemask_epi8(cmp);
-        
+
         if mask != 0xFFFF {
             return false;
         }
-        
+
         offset += 16;
     }
 
@@ -161,11 +161,11 @@ fn is_ascii_simd_aarch64(s: &[u8]) -> bool {
             let chunk = vld1q_u8(s.as_ptr().add(offset));
             let test = vtstq_u8(chunk, ascii_mask);
             let any_high = vmaxvq_u8(test);
-            
+
             if any_high != 0 {
                 return false;
             }
-            
+
             offset += 16;
         }
 
@@ -193,11 +193,11 @@ unsafe fn is_ascii_simd_x86(s: &[u8]) -> bool {
         let chunk = _mm_loadu_si128(s.as_ptr().add(offset) as *const __m128i);
         let test = _mm_and_si128(chunk, ascii_mask);
         let mask = _mm_movemask_epi8(test);
-        
+
         if mask != 0 {
             return false;
         }
-        
+
         offset += 16;
     }
 
@@ -255,7 +255,7 @@ fn find_byte_simd_aarch64(haystack: &[u8], needle: u8) -> Option<usize> {
             let chunk = vld1q_u8(haystack.as_ptr().add(offset));
             let cmp = vceqq_u8(chunk, needle_vec);
             let mask = vmaxvq_u8(cmp);
-            
+
             if mask != 0 {
                 #[allow(clippy::needless_range_loop)]
                 for i in 0..16 {
@@ -264,7 +264,7 @@ fn find_byte_simd_aarch64(haystack: &[u8], needle: u8) -> Option<usize> {
                     }
                 }
             }
-            
+
             offset += 16;
         }
 
@@ -292,7 +292,7 @@ unsafe fn find_byte_simd_x86(haystack: &[u8], needle: u8) -> Option<usize> {
         let chunk = _mm_loadu_si128(haystack.as_ptr().add(offset) as *const __m128i);
         let cmp = _mm_cmpeq_epi8(chunk, needle_vec);
         let mask = _mm_movemask_epi8(cmp);
-        
+
         if mask != 0 {
             #[allow(clippy::needless_range_loop)]
             for i in 0..16 {
@@ -301,7 +301,7 @@ unsafe fn find_byte_simd_x86(haystack: &[u8], needle: u8) -> Option<usize> {
                 }
             }
         }
-        
+
         offset += 16;
     }
 
@@ -413,7 +413,7 @@ mod tests {
         assert!(fast_str_eq("hello", "hello"));
         assert!(!fast_str_eq("hello", "world"));
         assert!(!fast_str_eq("hello", "hello!"));
-        
+
         let long_str = "a".repeat(100);
         assert!(fast_str_eq(&long_str, &long_str));
         assert!(!fast_str_eq(&long_str, &"b".repeat(100)));
@@ -431,7 +431,7 @@ mod tests {
         assert_eq!(find_byte_fast(b"hello", b'e'), Some(1));
         assert_eq!(find_byte_fast(b"hello world!", b'w'), Some(6));
         assert_eq!(find_byte_fast(b"hello", b'x'), None);
-        
+
         let mut long_bytes = b"a".repeat(100);
         long_bytes.push(b'b');
         assert_eq!(find_byte_fast(&long_bytes, b'b'), Some(100));
@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(count_byte_fast(b"hello", b'l'), 2);
         assert_eq!(count_byte_fast(b"aaabbbccc", b'b'), 3);
         assert_eq!(count_byte_fast(b"hello", b'x'), 0);
-        
+
         let long_bytes = vec![b'a'; 100];
         assert_eq!(count_byte_fast(&long_bytes, b'a'), 100);
     }

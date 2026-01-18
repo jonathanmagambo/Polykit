@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::package::Package;
-use crate::simd_utils;
 
 #[derive(Debug, Clone)]
 pub struct GraphNode {
@@ -25,15 +24,68 @@ pub struct GraphNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SerializableGraph {
     packages: Vec<Package>,
-    topological_order: Vec<String>,
-    dependency_levels: Vec<Vec<String>>,
+    #[serde(serialize_with = "serialize_arc_str_vec")]
+    #[serde(deserialize_with = "deserialize_arc_str_vec")]
+    topological_order: Vec<Arc<str>>,
+    #[serde(serialize_with = "serialize_arc_str_vec_vec")]
+    #[serde(deserialize_with = "deserialize_arc_str_vec_vec")]
+    dependency_levels: Vec<Vec<Arc<str>>>,
+}
+
+fn serialize_arc_str_vec<S>(vec: &[Arc<str>], serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::Serialize;
+    let strings: Vec<&str> = vec.iter().map(|s| s.as_ref()).collect();
+    strings.serialize(serializer)
+}
+
+fn deserialize_arc_str_vec<'de, D>(deserializer: D) -> std::result::Result<Vec<Arc<str>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let strings: Vec<String> = Vec::deserialize(deserializer)?;
+    Ok(strings.into_iter().map(Arc::from).collect())
+}
+
+fn serialize_arc_str_vec_vec<S>(
+    vec: &[Vec<Arc<str>>],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::Serialize;
+    let strings: Vec<Vec<&str>> = vec
+        .iter()
+        .map(|level| level.iter().map(|s| s.as_ref()).collect())
+        .collect();
+    strings.serialize(serializer)
+}
+
+fn deserialize_arc_str_vec_vec<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<Vec<Arc<str>>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let strings: Vec<Vec<String>> = Vec::deserialize(deserializer)?;
+    Ok(strings
+        .into_iter()
+        .map(|level| level.into_iter().map(Arc::from).collect())
+        .collect())
 }
 
 /// Directed acyclic graph of package dependencies.
 #[derive(Debug)]
 pub struct DependencyGraph {
     graph: DiGraph<Arc<str>, ()>,
+    #[allow(dead_code)]
     node_map: FxHashMap<Arc<str>, NodeIndex>,
+    name_to_node: FxHashMap<String, NodeIndex>,
     packages: FxHashMap<NodeIndex, Package>,
     cached_topological_order: Vec<Arc<str>>,
     dependency_levels: Vec<Vec<Arc<str>>>,
@@ -46,13 +98,16 @@ impl DependencyGraph {
     ///
     /// Returns an error if circular dependencies are detected.
     pub fn new(packages: Vec<Package>) -> Result<Self> {
-        let mut graph = DiGraph::with_capacity(packages.len(), packages.len() * 2);
-        let mut node_map = FxHashMap::with_capacity_and_hasher(packages.len(), Default::default());
+        let package_count = packages.len();
+        let mut graph = DiGraph::with_capacity(package_count, package_count * 2);
+        let mut node_map = FxHashMap::with_capacity_and_hasher(package_count, Default::default());
+        let mut name_to_node =
+            FxHashMap::with_capacity_and_hasher(package_count, Default::default());
         let mut packages_map =
-            FxHashMap::with_capacity_and_hasher(packages.len(), Default::default());
+            FxHashMap::with_capacity_and_hasher(package_count, Default::default());
 
         let mut name_cache: FxHashMap<String, Arc<str>> =
-            FxHashMap::with_capacity_and_hasher(packages.len(), Default::default());
+            FxHashMap::with_capacity_and_hasher(package_count, Default::default());
         for package in &packages {
             let name_arc = Arc::from(package.name.as_str());
             name_cache.insert(package.name.clone(), Arc::clone(&name_arc));
@@ -62,27 +117,35 @@ impl DependencyGraph {
             let name_arc = name_cache.get(&package.name).unwrap();
             let node = graph.add_node(Arc::clone(name_arc));
             node_map.insert(Arc::clone(name_arc), node);
+            name_to_node.insert(package.name.clone(), node);
             packages_map.insert(node, package.clone());
         }
 
-        let all_names: Vec<String> = packages.iter().map(|p| p.name.clone()).collect();
-        let available = all_names.join(", ");
-
         for package in &packages {
             let name_arc = name_cache.get(&package.name).unwrap();
-            let from_node = node_map.get(name_arc).ok_or_else(|| Error::PackageNotFound {
-                name: package.name.clone(),
-                available: available.clone(),
-            })?;
+            let from_node = node_map
+                .get(name_arc)
+                .ok_or_else(|| Error::PackageNotFound {
+                    name: package.name.clone(),
+                    available: format!(
+                        "Package '{}' not found during graph construction",
+                        package.name
+                    ),
+                })?;
 
             for dep_name in &package.deps {
-                let dep_arc = name_cache.get(dep_name).ok_or_else(|| Error::PackageNotFound {
-                    name: dep_name.clone(),
-                    available: available.clone(),
-                })?;
-                let to_node = node_map.get(dep_arc).ok_or_else(|| Error::PackageNotFound {
-                    name: dep_name.clone(),
-                    available: available.clone(),
+                let dep_arc = name_cache
+                    .get(dep_name)
+                    .ok_or_else(|| Error::PackageNotFound {
+                        name: dep_name.clone(),
+                        available: format!("Dependency '{}' not found", dep_name),
+                    })?;
+                let to_node = node_map.get(dep_arc).ok_or_else(|| {
+                    let name = dep_name.clone();
+                    Error::PackageNotFound {
+                        name: name.clone(),
+                        available: format!("Dependency '{}' not found", name),
+                    }
                 })?;
 
                 graph.add_edge(*from_node, *to_node, ());
@@ -106,6 +169,7 @@ impl DependencyGraph {
         Ok(Self {
             graph,
             node_map,
+            name_to_node,
             packages: packages_map,
             cached_topological_order: topological_order,
             dependency_levels,
@@ -118,18 +182,15 @@ impl DependencyGraph {
         order: &[Arc<str>],
     ) -> Result<Vec<Vec<Arc<str>>>> {
         let mut levels = Vec::new();
-        let mut level_map =
-            FxHashMap::with_capacity_and_hasher(order.len(), Default::default());
+        let mut level_map = FxHashMap::with_capacity_and_hasher(order.len(), Default::default());
 
         for package_name in order {
-            let node = node_map.get(package_name).ok_or_else(|| {
-                let available: Vec<String> = node_map.keys().map(|k| k.to_string()).collect();
-                let available_str = available.join(", ");
-                Error::PackageNotFound {
+            let node = node_map
+                .get(package_name)
+                .ok_or_else(|| Error::PackageNotFound {
                     name: package_name.to_string(),
-                    available: available_str,
-                }
-            })?;
+                    available: format!("Package '{}' not found in node_map", package_name),
+                })?;
 
             let deps: Vec<Arc<str>> = graph
                 .neighbors_directed(*node, Direction::Outgoing)
@@ -159,10 +220,9 @@ impl DependencyGraph {
     /// Retrieves a package by name.
     #[inline]
     pub fn get_package(&self, name: &str) -> Option<&Package> {
-        self.node_map
-            .iter()
-            .find(|(k, _)| simd_utils::fast_str_eq(k.as_ref(), name))
-            .and_then(|(_, idx)| self.packages.get(idx))
+        self.name_to_node
+            .get(name)
+            .and_then(|idx| self.packages.get(idx))
     }
 
     /// Returns packages in topological order (dependencies before dependents).
@@ -194,17 +254,11 @@ impl DependencyGraph {
     /// Returns an error if the package is not found in the graph.
     pub fn dependencies(&self, package_name: &str) -> Result<Vec<String>> {
         let node = self
-            .node_map
-            .iter()
-            .find(|(k, _)| k.as_ref() == package_name)
-            .map(|(_, idx)| idx)
-            .ok_or_else(|| {
-                let available: Vec<String> = self.node_map.keys().map(|k| k.to_string()).collect();
-                let available_str = available.join(", ");
-                Error::PackageNotFound {
-                    name: package_name.to_string(),
-                    available: available_str,
-                }
+            .name_to_node
+            .get(package_name)
+            .ok_or_else(|| Error::PackageNotFound {
+                name: package_name.to_string(),
+                available: format!("Package '{}' not found", package_name),
             })?;
 
         let deps: Vec<String> = self
@@ -223,17 +277,11 @@ impl DependencyGraph {
     /// Returns an error if the package is not found in the graph.
     pub fn dependents(&self, package_name: &str) -> Result<Vec<String>> {
         let node = self
-            .node_map
-            .iter()
-            .find(|(k, _)| k.as_ref() == package_name)
-            .map(|(_, idx)| idx)
-            .ok_or_else(|| {
-                let available: Vec<String> = self.node_map.keys().map(|k| k.to_string()).collect();
-                let available_str = available.join(", ");
-                Error::PackageNotFound {
-                    name: package_name.to_string(),
-                    available: available_str,
-                }
+            .name_to_node
+            .get(package_name)
+            .ok_or_else(|| Error::PackageNotFound {
+                name: package_name.to_string(),
+                available: format!("Package '{}' not found", package_name),
             })?;
 
         let dependents: Vec<String> = self
@@ -303,21 +351,11 @@ impl DependencyGraph {
     /// Serializes the graph to a file for fast loading.
     pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<()> {
         let packages: Vec<Package> = self.packages.values().cloned().collect();
-        let topological_order: Vec<String> = self
-            .cached_topological_order
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let dependency_levels: Vec<Vec<String>> = self
-            .dependency_levels
-            .iter()
-            .map(|level| level.iter().map(|s| s.to_string()).collect())
-            .collect();
 
         let serializable = SerializableGraph {
             packages,
-            topological_order,
-            dependency_levels,
+            topological_order: self.cached_topological_order.clone(),
+            dependency_levels: self.dependency_levels.clone(),
         };
 
         let serialized = bincode::serialize(&serializable).map_err(|e| Error::Adapter {

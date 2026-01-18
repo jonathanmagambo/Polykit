@@ -1,42 +1,63 @@
 # Getting Started
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Your First Monorepo](#your-first-monorepo)
+  - [Create Package Structure](#1-create-package-structure)
+  - [Configure Packages](#2-configure-packages)
+  - [Use Polykit](#3-use-polykit)
+- [Common Workflows](#common-workflows)
+  - [Change Detection](#change-detection)
+  - [Release Management](#release-management)
+  - [Watch Mode](#watch-mode)
+  - [Dependency Analysis](#dependency-analysis)
+- [Configuration](#configuration)
+  - [Required Fields](#required-fields)
+  - [Optional Fields](#optional-fields)
+  - [Workspace Configuration](#workspace-configuration)
+
 ## Installation
 
-### From Source
+Install Polykit globally so you can use the `polykit` command from anywhere:
 
 ```bash
 git clone https://github.com/jonathanmagambo/polykit.git
 cd polykit
-cargo build --release
-```
-
-The binary will be available at `target/release/polykit`.
-
-### Using Cargo
-
-```bash
 cargo install --path .
 ```
+
+After installation, verify it works:
+
+```bash
+polykit scan
+```
+
+The `polykit` command is now available in your PATH.
 
 ## Your First Monorepo
 
 ### 1. Create Package Structure
 
-Organize your monorepo with packages in the `packages/` directory:
+Organize your monorepo with packages in a `packages/` directory (or any directory you prefer):
 
 ```
 packages/
   my-api/
     polykit.toml
-    package.json  # or Cargo.toml, pyproject.toml, etc.
+    package.json
   my-utils/
     polykit.toml
     Cargo.toml
 ```
 
-### 2. Define Package Configuration
+Each package directory should contain:
+- A `polykit.toml` configuration file
+- The package's native files (e.g., `package.json`, `Cargo.toml`, `pyproject.toml`)
 
-Each package needs a `polykit.toml`:
+### 2. Configure Packages
+
+Each package needs a `polykit.toml` file in its directory. This file defines the package's metadata, dependencies, and tasks:
 
 ```toml
 name = "my-api"
@@ -49,136 +70,111 @@ internal = ["my-utils"]
 [tasks]
 build = "npm run build"
 test = "npm test"
-lint = "npm run lint"
 ```
 
-### 3. Scan Packages
+- `name` - Unique identifier for your package
+- `language` - The programming language (`js`, `ts`, `python`, `go`, or `rust`)
+- `public` - Whether this package is published
+- `[deps.internal]` - List of other packages in your monorepo this package depends on
+- `[tasks]` - Commands to run for this package
+
+### 3. Use Polykit
+
+Now you can use Polykit commands to work with your monorepo:
 
 ```bash
-polykit scan
+polykit scan              # Discover all packages
+polykit graph             # View packages in dependency order
+polykit build             # Build all packages (respects dependencies)
+polykit build my-api      # Build specific package and its dependencies
+polykit test --parallel 4 # Run tests in parallel (4 workers)
 ```
 
-This discovers all packages and displays them.
-
-### 4. View Dependency Graph
-
-```bash
-polykit graph
-```
-
-Shows packages in topological order (dependencies before dependents).
-
-### 5. Build Packages
-
-```bash
-# Build all packages
-polykit build
-
-# Build specific packages
-polykit build my-api my-utils
-
-# Build with parallel execution
-polykit build --parallel 4
-```
-
-### 6. Run Tests
-
-```bash
-# Test all packages
-polykit test
-
-# Test specific packages
-polykit test my-api
-
-# Continue on error
-polykit test --continue-on-error
-```
+Polykit automatically:
+- Discovers all packages by scanning for `polykit.toml` files
+- Builds a dependency graph
+- Executes tasks in the correct order (dependencies first)
+- Runs independent packages in parallel when possible
 
 ## Common Workflows
 
 ### Change Detection
 
-Find packages affected by file changes:
+Find which packages are affected by file changes. This is useful for CI/CD to only build/test what changed:
 
 ```bash
-# From git diff
-polykit affected --git
-
-# From specific files
-polykit affected packages/my-api/src/index.ts
+polykit affected --git                    # Detect from git diff (compares to HEAD)
+polykit affected --git --base main        # Compare to main branch
+polykit affected packages/api/src/file.ts # Check specific files
 ```
+
+Returns a list of packages that need to be rebuilt/tested.
 
 ### Release Management
 
-Plan and execute version bumps:
+Automatically bump package versions and update dependents:
 
 ```bash
-# Dry run to see what would change
-polykit release my-api --bump minor --dry-run
-
-# Execute the release
-polykit release my-api --bump minor
+polykit release my-api --bump minor --dry-run  # Preview what will change
+polykit release my-api --bump minor             # Execute the version bump
 ```
 
-The release engine automatically:
-- Bumps the target package version
-- Updates dependent packages (patch version)
-- Ensures correct publish order
+The release command:
+- Bumps the target package version (major, minor, or patch)
+- Automatically bumps dependent packages (patch version)
+- Updates version files (`package.json`, `Cargo.toml`, `pyproject.toml`) based on language
+
+### Watch Mode
+
+Automatically rebuild when files change:
+
+```bash
+polykit watch build              # Watch and rebuild all packages
+polykit watch build my-api       # Watch and rebuild specific packages
+polykit watch test --debounce 500 # Custom debounce delay in milliseconds
+```
+
+The watch command monitors your packages directory and re-runs the specified task when files change.
 
 ### Dependency Analysis
 
-Explore dependency relationships:
+Understand package relationships:
 
 ```bash
-# See what a package depends on and what depends on it
-polykit why my-api
+polykit why my-api  # Show what my-api depends on and what depends on it
 ```
 
-## Configuration Reference
+This command displays:
+- Direct dependencies (what `my-api` needs)
+- Direct dependents (what packages need `my-api`)
+
+## Configuration
 
 ### Required Fields
 
-- `name`: Unique package name (alphanumeric with `-`, `_`, `.`, `@` only; max 255 chars)
-- `language`: One of `js`, `ts`, `python`, `go`, `rust`
-- `public`: Whether the package is published
+Each package must have these fields in `polykit.toml`:
 
-### Optional Sections
+- `name` - Unique package name (alphanumeric with `-`, `_`, `.`, `@` only)
+- `language` - One of: `js`, `ts`, `python`, `go`, `rust`
+- `public` - Boolean indicating if the package is published
 
-- `[deps.internal]`: List of internal package dependencies (same naming rules as `name`)
-- `[tasks]`: Task name to shell command mapping (task names follow same naming rules)
+### Optional Fields
 
-### Naming Rules
+- `[deps.internal]` - Array of internal package dependencies
+- `[tasks]` - Task definitions mapping task names to shell commands
+- `task.depends_on` - Array of task names that must run before this task
 
-All identifiers (package names, task names, dependency names) must:
-- Be non-empty and not exceed 255 characters
-- Contain only alphanumeric characters, hyphens (`-`), underscores (`_`), dots (`.`), and `@`
-- Not start with `.` or `-`
-- Not contain path separators (`/`, `\`) or parent directory references (`..`)
+### Workspace Configuration
 
-### Command Rules
-
-Task commands:
-- Cannot contain null bytes or embedded newlines
-- Cannot exceed 10,000 characters
-
-### Full Example
+Create a `polykit.toml` at your repository root to configure workspace settings:
 
 ```toml
-name = "api-server"
-language = "rust"
-public = true
-
-[deps]
-internal = ["shared-utils", "database-client", "auth-middleware"]
-
-[tasks]
-build = "cargo build --release"
-test = "cargo test --all-features"
-lint = "cargo clippy --all-targets"
-format = "cargo fmt --check"
+[workspace]
+cache_dir = ".polykit/cache"
+default_parallel = 4
 ```
 
-## Next Steps
+- `cache_dir` - Directory for caching scan results (speeds up subsequent scans)
+- `default_parallel` - Default number of parallel workers for build/test commands
 
-- Check out `docs/EXAMPLES.md` for real-world patterns
-- Explore the `packages/` directory for example configurations
+See `docs/EXAMPLES.md` for more examples.

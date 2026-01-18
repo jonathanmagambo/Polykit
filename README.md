@@ -15,103 +15,100 @@
   [![Status](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml/badge.svg)](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml)
 </div>
 
-<h1 align="center">What is Polykit?</h1>
+## What is Polykit?
 
-Polykit is a production-grade monorepo orchestration tool written in Rust. It manages cross-language dependencies, executes tasks in dependency order, and handles semantic versioning across your entire monorepo.
+Polykit orchestrates monorepos across multiple languages. It manages dependencies, executes tasks in order, and handles versioning.
 
 **Think of Polykit as the brain that orchestrates your monorepo: it doesn't manage dependencies, it orchestrates them.**
 
 <h1 align="center">Goals</h1>
 
-- ⚡ **Fast** Parallel execution, smart caching, optimized graph operations
-- 🔗 **Cross-language** JavaScript/TypeScript, Python, Go, Rust
-- 📊 **Graph-first** Dependency-driven execution
-- 🎯 **Simple** Minimal TOML, convention over configuration
-- 🛡️ **Safe** Deterministic runs, cycle detection
-- 🚀 **Zero overhead** Delegates to native tools
+- ⚡ **Fast** - Parallel execution, smart caching, optimized for 10k+ packages
+- 🔗 **Cross-language** - Works with JavaScript, TypeScript, Python, Go, and Rust
+- 📊 **Graph-first** - Dependency-driven execution ensures correct order
+- 🎯 **Simple** - Minimal TOML configuration, convention over complexity
+- 🛡️ **Safe** - Deterministic runs, automatic cycle detection
+- 🚀 **Zero overhead** - Delegates to native tools, no reinventing wheels
 
-<h1 align="center">Quick Start</h1>
+## Installation
 
 ```bash
 git clone https://github.com/jonathanmagambo/polykit.git
 cd polykit
-cargo build --release
-./target/release/polykit scan
+cargo install --path .
 ```
 
-See the [Getting Started Guide](docs/GETTING_STARTED.md) for detailed instructions.
+Verify installation:
 
-<h1 align="center">Example</h1>
+```bash
+polykit scan
+```
+
+## Quick Start
+
+1. Create a `polykit.toml` in each package:
 
 ```toml
-# packages/api-server/polykit.toml
-name = "api-server"
+name = "my-package"
 language = "rust"
 public = true
 
 [deps]
-internal = ["shared-utils", "database-client"]
+internal = ["other-package"]
 
 [tasks]
 build = "cargo build --release"
 test = "cargo test"
 ```
 
+2. Run commands:
+
 ```bash
-# Build all packages in dependency order
-polykit build
-
-# Run tests with parallel execution
-polykit test --parallel 4
-
-# Release with automatic version bumps
-polykit release api-server --bump minor
-
-# Watch for changes and rebuild
-polykit watch build
+polykit scan          # Discover packages
+polykit build         # Build all packages
+polykit test          # Run tests
+polykit graph         # Show dependency order
 ```
 
-<h1 align="center">Commands</h1>
+## Commands
 
-- **`polykit scan`** Discover packages
-- **`polykit graph`** Show dependency order
-- **`polykit affected`** Find impacted packages (git-aware)
-- **`polykit build`** Run build tasks
-- **`polykit test`** Run tests
-- **`polykit release`** Plan/execute bumps
-- **`polykit watch`** Rebuild on changes
-- **`polykit why`** Explain relationships
-- **`polykit validate`** Validate config/graph
-- **`polykit list`** List tasks
+- `polykit scan` - Discover packages
+- `polykit graph` - Show dependency order
+- `polykit build [packages...]` - Build packages
+- `polykit test [packages...]` - Run tests
+- `polykit affected --git` - Find changed packages
+- `polykit release <package> --bump <major|minor|patch>` - Bump versions
+- `polykit watch <task>` - Watch and rebuild
+- `polykit why <package>` - Show dependencies
+- `polykit validate` - Validate configuration
+- `polykit list` - List all tasks
 
-<h1 align="center">Supported Languages</h1>
+## Supported Languages
 
-- **JavaScript/TypeScript** Reads `package.json`, bumps `version`
-- **Python** Reads `pyproject.toml` (Poetry + PEP 621)
-- **Go** Detects `go.mod` (no version bumps)
-- **Rust** Reads `Cargo.toml`, bumps `package.version`
+- JavaScript/TypeScript (`js`, `ts`)
+- Python (`python`)
+- Go (`go`)
+- Rust (`rust`)
 
-Language adapters are pluggable: add support for any language by implementing the `LanguageAdapter` trait.
+## Configuration
 
-<h1 align="center">Configuration</h1>
-
-Each package requires a `polykit.toml`:
+Each package needs a `polykit.toml`:
 
 ```toml
-name = "api-server"
+name = "package-name"
 language = "rust"
 public = true
 
 [deps]
-internal = ["shared-utils", "database-client"]
+internal = ["dep1", "dep2"]
 
 [tasks]
-build = "cargo build --release"
+build = "cargo build"
 test = "cargo test"
 test.depends_on = ["build"]
 ```
 
-Optional workspace config (`polykit.toml` at repo root):
+Optional workspace config at repo root:
 
 ```toml
 [workspace]

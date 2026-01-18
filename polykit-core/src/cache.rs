@@ -6,6 +6,7 @@ use std::time::SystemTime;
 
 use bincode;
 use memmap2::{Mmap, MmapMut};
+use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::xxh3_64;
@@ -89,7 +90,7 @@ impl Cache {
 
         let file = File::open(&cache_path).map_err(Error::Io)?;
         let metadata = file.metadata().map_err(Error::Io)?;
-        
+
         if metadata.len() == 0 {
             self.stats.misses += 1;
             return Ok(None);
@@ -184,44 +185,63 @@ impl Cache {
     }
 
     fn collect_mtimes(&self, packages_dir: &Path) -> Result<FxHashMap<PathBuf, u64>> {
-        let mut mtimes = FxHashMap::default();
-        let mut package_dirs = rustc_hash::FxHashSet::default();
+        let packages_dir = packages_dir.to_path_buf();
 
-        for entry in walkdir::WalkDir::new(packages_dir)
+        let polykit_files: Vec<PathBuf> = walkdir::WalkDir::new(&packages_dir)
             .max_depth(MAX_SCAN_DEPTH)
             .follow_links(false)
             .into_iter()
             .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if entry.file_name() == "polykit.toml" {
-                if let Ok(metadata) = entry.metadata() {
+            .filter(|e| e.file_name() == "polykit.toml")
+            .map(|e| e.path().to_path_buf())
+            .collect();
+
+        let mtimes_vec: Vec<(PathBuf, u64)> = polykit_files
+            .into_par_iter()
+            .flat_map(|path| {
+                let mut results = Vec::new();
+
+                if let Ok(metadata) = path.metadata() {
                     if let Ok(mtime) = metadata.modified() {
                         if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
                             let relative_path = path
-                                .strip_prefix(packages_dir)
-                                .unwrap_or(path)
+                                .strip_prefix(&packages_dir)
+                                .unwrap_or(&path)
                                 .to_path_buf();
-                            mtimes.insert(relative_path, duration.as_secs());
+                            results.push((relative_path, duration.as_secs()));
                         }
                     }
                 }
+
                 if let Some(package_dir) = path.parent() {
                     if let Ok(metadata) = package_dir.metadata() {
                         if let Ok(mtime) = metadata.modified() {
                             if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
                                 let relative_dir = package_dir
-                                    .strip_prefix(packages_dir)
+                                    .strip_prefix(&packages_dir)
                                     .unwrap_or(package_dir)
                                     .to_path_buf();
-                                package_dirs.insert(relative_dir.clone());
                                 let dir_key = relative_dir.join(".dir");
-                                mtimes.insert(dir_key, duration.as_secs());
+                                results.push((dir_key, duration.as_secs()));
                             }
                         }
                     }
                 }
+
+                results
+            })
+            .collect();
+
+        let mut mtimes = FxHashMap::with_capacity_and_hasher(mtimes_vec.len(), Default::default());
+        let mut package_dirs = rustc_hash::FxHashSet::default();
+
+        for (path, mtime) in mtimes_vec {
+            if path.file_name().and_then(|n| n.to_str()) == Some(".dir") {
+                if let Some(parent) = path.parent() {
+                    package_dirs.insert(parent.to_path_buf());
+                }
             }
+            mtimes.insert(path, mtime);
         }
 
         let package_count_key = PathBuf::from(".package_count");
@@ -239,24 +259,62 @@ impl Cache {
             return Ok(false);
         }
 
-        let current_mtimes = self.collect_mtimes(packages_dir)?;
-
-        if current_mtimes.len() != cached_mtimes.len() {
-            return Ok(false);
+        let package_count_key = PathBuf::from(".package_count");
+        if let Some(cached_count) = cached_mtimes.get(&package_count_key) {
+            let current_count = self.count_packages_fast(packages_dir)?;
+            if current_count != *cached_count {
+                return Ok(false);
+            }
         }
 
+        let packages_dir = packages_dir.to_path_buf();
+
         for (path, cached_time) in cached_mtimes {
-            match current_mtimes.get(path) {
-                Some(current_time) => {
-                    if current_time != cached_time {
-                        return Ok(false);
-                    }
+            if path == &package_count_key {
+                continue;
+            }
+
+            let path_to_check = if path.file_name().and_then(|n| n.to_str()) == Some(".dir") {
+                if let Some(parent) = path.parent() {
+                    packages_dir.join(parent)
+                } else {
+                    packages_dir.join(path)
                 }
-                None => return Ok(false),
+            } else {
+                packages_dir.join(path)
+            };
+
+            let is_valid = if let Ok(metadata) = path_to_check.metadata() {
+                if let Ok(mtime) = metadata.modified() {
+                    if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
+                        duration.as_secs() == *cached_time
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !is_valid {
+                return Ok(false);
             }
         }
 
         Ok(true)
+    }
+
+    fn count_packages_fast(&self, packages_dir: &Path) -> Result<u64> {
+        let count = walkdir::WalkDir::new(packages_dir)
+            .max_depth(MAX_SCAN_DEPTH)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() == "polykit.toml")
+            .count();
+        Ok(count as u64)
     }
 
     pub fn clear(&self, packages_dir: &Path) -> Result<()> {

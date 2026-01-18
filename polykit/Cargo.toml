@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Fast, language-agnostic monorepo orchestration tool"
+keywords = ["monorepo", "build-tool", "orchestration", "dependencies", "workspace"]
+categories = ["development-tools", "command-line-utilities"]
 
 [[bin]]
 name = "polykit"

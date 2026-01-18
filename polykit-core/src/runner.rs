@@ -79,41 +79,16 @@ impl TaskRunner {
             return Ok(Vec::new());
         }
 
-        let packages_set: HashSet<String> =
-            packages_to_run.iter().map(|p| p.name.clone()).collect();
+        let packages_set: HashSet<&str> = packages_to_run.iter().map(|p| p.name.as_str()).collect();
 
         let levels = self.graph.dependency_levels();
         let mut results = Vec::with_capacity(packages_to_run.len());
 
-        let pool_config = rayon::ThreadPoolBuilder::new()
-            .num_threads(self.max_parallel.unwrap_or_else(rayon::current_num_threads))
-            .build();
-
-        let pool = match pool_config {
-            Ok(p) => p,
-            Err(_) => {
-                for level in levels {
-                    let level_packages: Vec<&Package> = level
-                        .iter()
-                        .filter(|name| packages_set.contains(name.as_str()))
-                        .filter_map(|name| self.graph.get_package(name))
-                        .collect();
-
-                    if level_packages.is_empty() {
-                        continue;
-                    }
-
-                    let level_results: Result<Vec<TaskResult>> = level_packages
-                        .into_par_iter()
-                        .map(|package| self.execute_task(package, task_name))
-                        .collect();
-
-                    let mut level_results = level_results?;
-                    results.append(&mut level_results);
-                }
-                return Ok(results);
-            }
-        };
+        let thread_count = self.max_parallel.unwrap_or_else(rayon::current_num_threads);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(thread_count)
+            .build()
+            .unwrap_or_else(|_| rayon::ThreadPoolBuilder::new().build().unwrap());
 
         for level in levels {
             let level_packages: Vec<&Package> = level
@@ -163,8 +138,7 @@ impl TaskRunner {
             return Ok(Vec::new());
         }
 
-        let packages_set: HashSet<String> =
-            packages_to_run.iter().map(|p| p.name.clone()).collect();
+        let packages_set: HashSet<&str> = packages_to_run.iter().map(|p| p.name.as_str()).collect();
 
         let levels = self.graph.dependency_levels();
         let mut results = Vec::new();
@@ -176,7 +150,7 @@ impl TaskRunner {
         for level in levels {
             let level_packages: Vec<Package> = level
                 .iter()
-                .filter(|name| packages_set.contains(*name))
+                .filter(|name| packages_set.contains(name.as_str()))
                 .filter_map(|name| self.graph.get_package(name))
                 .cloned()
                 .collect();
@@ -353,12 +327,13 @@ impl TaskRunner {
         task_name: &str,
     ) -> Result<Vec<TaskResult>> {
         let task_order = self.build_task_dependency_order(package, task_name)?;
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(task_order.len());
 
         for task in &task_order {
             let result = self.execute_task_internal(package, task)?;
-            results.push(result.clone());
-            if !result.success && task == task_name {
+            let success = result.success;
+            results.push(result);
+            if !success && task == task_name {
                 return Ok(results);
             }
         }
@@ -367,22 +342,19 @@ impl TaskRunner {
     }
 
     fn execute_task_internal(&self, package: &Package, task_name: &str) -> Result<TaskResult> {
-        let task = package
-            .get_task(task_name)
-            .ok_or_else(|| Error::TaskExecution {
+        let task = package.get_task(task_name).ok_or_else(|| {
+            let available_tasks: Vec<&str> =
+                package.tasks.iter().map(|t| t.name.as_str()).collect();
+            Error::TaskExecution {
                 package: package.name.clone(),
                 task: task_name.to_string(),
                 message: format!(
                     "Task '{}' not found. Available tasks: {}",
                     task_name,
-                    package
-                        .tasks
-                        .iter()
-                        .map(|t| t.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    available_tasks.join(", ")
                 ),
-            })?;
+            }
+        })?;
 
         if let Some(ref cache) = self.task_cache {
             if let Some(cached_result) = cache.get(&package.name, task_name, &task.command)? {
