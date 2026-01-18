@@ -41,6 +41,8 @@ cargo run -- scan
 - Write tests for new features
 - Keep documentation comments concise and useful
 - Use meaningful variable and function names
+- Validate user input before use (see `polykit-core/src/command_validator.rs` for patterns)
+- Never use `unwrap()` or `expect()` in library code; use proper error handling
 
 ## Adding a New Language Adapter
 
@@ -74,6 +76,7 @@ impl LanguageAdapter for RubyAdapter {
 - Integration tests go in `tests/` directories
 - Use descriptive test names
 - Test both success and error cases
+- Include tests for input validation (see `polykit-core/tests/command_validator_test.rs` for examples)
 
 ## Commit Messages
 

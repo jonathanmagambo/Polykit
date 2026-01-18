@@ -138,14 +138,28 @@ polykit why my-api
 
 ### Required Fields
 
-- `name`: Unique package name
+- `name`: Unique package name (alphanumeric with `-`, `_`, `.`, `@` only; max 255 chars)
 - `language`: One of `js`, `ts`, `python`, `go`, `rust`
 - `public`: Whether the package is published
 
 ### Optional Sections
 
-- `[deps.internal]`: List of internal package dependencies
-- `[tasks]`: Task name to shell command mapping
+- `[deps.internal]`: List of internal package dependencies (same naming rules as `name`)
+- `[tasks]`: Task name to shell command mapping (task names follow same naming rules)
+
+### Naming Rules
+
+All identifiers (package names, task names, dependency names) must:
+- Be non-empty and not exceed 255 characters
+- Contain only alphanumeric characters, hyphens (`-`), underscores (`_`), dots (`.`), and `@`
+- Not start with `.` or `-`
+- Not contain path separators (`/`, `\`) or parent directory references (`..`)
+
+### Command Rules
+
+Task commands:
+- Cannot contain null bytes or embedded newlines
+- Cannot exceed 10,000 characters
 
 ### Full Example
 

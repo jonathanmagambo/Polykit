@@ -205,3 +205,10 @@ Error: Package not found: missing-package. Available packages: pkg-a, pkg-b
 $ polykit validate
 All packages are valid
 ```
+
+### Validation Errors
+
+If you see validation errors, check that:
+- Package and task names follow naming rules (alphanumeric with `-`, `_`, `.`, `@` only)
+- Commands don't contain null bytes or embedded newlines
+- Names don't start with `.` or `-`
