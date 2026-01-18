@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo/logo.png" alt="Polykit Logo" width="200">
+  <img src="assets/logo/logo.png" alt="Polykit Logo" width="120">
   
   <h1>Polykit</h1>
   
