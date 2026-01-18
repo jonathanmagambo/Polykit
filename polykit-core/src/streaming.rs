@@ -77,15 +77,20 @@ impl StreamingTask {
 
         let mut stdout_reader = BufReader::new(&mut stdout);
         let mut stderr_reader = BufReader::new(&mut stderr);
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+        let mut exit_status = None;
 
         loop {
             let mut stdout_line = String::new();
             let mut stderr_line = String::new();
 
             tokio::select! {
-                result = stdout_reader.read_line(&mut stdout_line) => {
+                result = stdout_reader.read_line(&mut stdout_line), if !stdout_done => {
                     match result {
-                        Ok(0) => {}
+                        Ok(0) => {
+                            stdout_done = true;
+                        }
                         Ok(_) => {
                             let trimmed = stdout_line.trim_end();
                             if !trimmed.is_empty() {
@@ -101,9 +106,11 @@ impl StreamingTask {
                         }
                     }
                 }
-                result = stderr_reader.read_line(&mut stderr_line) => {
+                result = stderr_reader.read_line(&mut stderr_line), if !stderr_done => {
                     match result {
-                        Ok(0) => {}
+                        Ok(0) => {
+                            stderr_done = true;
+                        }
                         Ok(_) => {
                             let trimmed = stderr_line.trim_end();
                             if !trimmed.is_empty() {
@@ -119,13 +126,19 @@ impl StreamingTask {
                         }
                     }
                 }
-                status = self.child.wait() => {
-                    let exit_status = status.map_err(|e| Error::TaskExecution {
+                status = self.child.wait(), if exit_status.is_none() => {
+                    exit_status = Some(status.map_err(|e| Error::TaskExecution {
                         package: self.package_name.clone(),
                         task: self.task_name.clone(),
                         message: format!("Failed to wait for process: {}", e),
-                    })?;
-                    return Ok(exit_status.success());
+                    })?);
+                }
+            }
+
+            // If process finished and both streams are done, exit
+            if let Some(status) = exit_status {
+                if stdout_done && stderr_done {
+                    return Ok(status.success());
                 }
             }
         }

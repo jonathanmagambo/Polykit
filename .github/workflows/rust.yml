@@ -14,6 +14,7 @@ jobs:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
@@ -27,6 +28,8 @@ jobs:
     
     - name: Build
       run: cargo build --verbose
+      timeout-minutes: 30
     
     - name: Run tests
       run: cargo test --verbose
+      timeout-minutes: 30
