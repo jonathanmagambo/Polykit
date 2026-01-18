@@ -73,9 +73,18 @@ fn test_package_lookup_o1_complexity() {
     }
     let duration = start.elapsed();
 
+    // Allow more time in CI environments (Windows, slower CI runners)
+    let max_duration_ms = if std::env::var("CI").is_ok() {
+        15000 // 15s for CI
+    } else {
+        5000 // 5s for local development
+    };
+
     assert!(
-        duration.as_millis() < 5000,
-        "10M lookups should complete in under 5s (O(1) lookup)"
+        duration.as_millis() < max_duration_ms,
+        "10M lookups should complete in under {}ms (O(1) lookup), took {}ms",
+        max_duration_ms,
+        duration.as_millis()
     );
 }
 
