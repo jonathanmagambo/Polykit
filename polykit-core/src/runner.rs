@@ -118,7 +118,7 @@ impl TaskRunner {
         let levels = self.graph.dependency_levels();
         let mut results = Vec::new();
         use std::sync::{Arc, Mutex};
-        let on_output = Arc::new(Mutex::new(on_output));
+        let output_handler = Arc::new(Mutex::new(on_output));
 
         for level in levels {
             let level_packages: Vec<&Package> = level
@@ -131,7 +131,7 @@ impl TaskRunner {
                 continue;
             }
 
-            let on_output_clone = Arc::clone(&on_output);
+            let output_handler_clone = Arc::clone(&output_handler);
 
             let level_results: Result<Vec<TaskResult>> = level_packages
                 .into_par_iter()
@@ -141,7 +141,7 @@ impl TaskRunner {
                     let streaming_task = StreamingTask::spawn(package, task_name, &package_path)?;
                     let stdout = Arc::new(Mutex::new(String::new()));
                     let stderr = Arc::new(Mutex::new(String::new()));
-                    let on_output_inner = Arc::clone(&on_output_clone);
+                    let output_handler_inner = Arc::clone(&output_handler_clone);
                     let stdout_clone = Arc::clone(&stdout);
                     let stderr_clone = Arc::clone(&stderr);
                     let package_name_clone = package_name.clone();
@@ -150,12 +150,11 @@ impl TaskRunner {
                         if is_stderr {
                             stderr_clone.lock().unwrap().push_str(line);
                             stderr_clone.lock().unwrap().push('\n');
-                            on_output_inner.lock().unwrap()(&package_name_clone, line, true);
                         } else {
                             stdout_clone.lock().unwrap().push_str(line);
                             stdout_clone.lock().unwrap().push('\n');
-                            on_output_inner.lock().unwrap()(&package_name_clone, line, false);
                         }
+                        output_handler_inner.lock().unwrap()(&package_name_clone, line, is_stderr);
                     })?;
 
                     Ok(TaskResult {

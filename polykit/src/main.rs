@@ -29,6 +29,9 @@ struct Cli {
 
     #[arg(long, action)]
     no_stream: bool,
+
+    #[arg(long, action)]
+    show_cache_stats: bool,
 }
 
 #[derive(Subcommand)]
@@ -128,10 +131,14 @@ fn main() -> Result<()> {
     let workspace_config = scanner.workspace_config();
 
     match cli.command {
-        Commands::Scan { json } => commands::cmd_scan(cli.packages_dir, json, cli.no_cache)?,
-        Commands::Graph { json } => commands::cmd_graph(cli.packages_dir, json, cli.no_cache)?,
+        Commands::Scan { json } => {
+            commands::cmd_scan(cli.packages_dir, json, cli.no_cache, cli.show_cache_stats)?
+        }
+        Commands::Graph { json } => {
+            commands::cmd_graph(cli.packages_dir, json, cli.no_cache, cli.show_cache_stats)?
+        }
         Commands::Affected { files, git, base } => {
-            commands::cmd_affected(cli.packages_dir, files, git, base, cli.no_cache)?
+            commands::cmd_affected(cli.packages_dir, files, git, base, cli.no_cache, cli.show_cache_stats)?
         }
         Commands::Build {
             packages,
@@ -146,6 +153,7 @@ fn main() -> Result<()> {
                 continue_on_error,
                 cli.no_cache,
                 cli.no_stream,
+                cli.show_cache_stats,
             )?
         }
         Commands::Test {
@@ -161,6 +169,7 @@ fn main() -> Result<()> {
                 continue_on_error,
                 cli.no_cache,
                 cli.no_stream,
+                cli.show_cache_stats,
             )?
         }
         Commands::Release {
@@ -173,12 +182,17 @@ fn main() -> Result<()> {
             bump.into(),
             dry_run,
             cli.no_cache,
+            cli.show_cache_stats,
         )?,
-        Commands::Why { package } => commands::cmd_why(cli.packages_dir, package, cli.no_cache)?,
-        Commands::Validate { json } => {
-            commands::cmd_validate(cli.packages_dir, json, cli.no_cache)?
+        Commands::Why { package } => {
+            commands::cmd_why(cli.packages_dir, package, cli.no_cache, cli.show_cache_stats)?
         }
-        Commands::List { json } => commands::cmd_list(cli.packages_dir, json, cli.no_cache)?,
+        Commands::Validate { json } => {
+            commands::cmd_validate(cli.packages_dir, json, cli.no_cache, cli.show_cache_stats)?
+        }
+        Commands::List { json } => {
+            commands::cmd_list(cli.packages_dir, json, cli.no_cache, cli.show_cache_stats)?
+        }
         Commands::Watch {
             task,
             packages,

@@ -36,8 +36,28 @@ where
 {
     let map: HashMap<String, toml::Value> = HashMap::deserialize(deserializer)?;
     let mut result = HashMap::new();
+    let mut dotted_deps: HashMap<String, Vec<String>> = HashMap::new();
 
+    // First pass: parse regular tasks and collect dotted-key dependencies
     for (key, value) in map {
+        // Check if this is a dotted-key dependency (e.g., "test.depends_on")
+        if let Some((task_name, dep_key)) = key.split_once('.') {
+            if dep_key == "depends_on" {
+                if let toml::Value::Array(arr) = value {
+                    let deps: Vec<String> = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                    dotted_deps.insert(task_name.to_string(), deps);
+                } else {
+                    return Err(serde::de::Error::custom(
+                        format!("Task dependency '{}' must be an array", key),
+                    ));
+                }
+                continue;
+            }
+        }
+
         match value {
             toml::Value::String(s) => {
                 result.insert(key, TaskValue::Simple(s));
@@ -75,6 +95,38 @@ where
         }
     }
 
+    // Second pass: merge dotted-key dependencies into existing tasks
+    for (task_name, deps) in dotted_deps {
+        let task_value = result.remove(&task_name).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "Task '{}' referenced in dotted-key dependency does not exist",
+                task_name
+            ))
+        })?;
+
+        match task_value {
+            TaskValue::Simple(command) => {
+                result.insert(
+                    task_name,
+                    TaskValue::Complex {
+                        command,
+                        depends_on: deps,
+                    },
+                );
+            }
+            TaskValue::Complex { command, .. } => {
+                // Replace dependencies (dotted-key takes precedence)
+                result.insert(
+                    task_name,
+                    TaskValue::Complex {
+                        command,
+                        depends_on: deps,
+                    },
+                );
+            }
+        }
+    }
+
     Ok(result)
 }
 
@@ -87,14 +139,14 @@ pub struct Deps {
 }
 
 /// Workspace-level configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct WorkspaceConfig {
     /// Cache directory path.
-    #[serde(default)]
     pub cache_dir: Option<String>,
     /// Default number of parallel jobs.
-    #[serde(default)]
     pub default_parallel: Option<usize>,
+    /// Path to the workspace config file (for resolving relative paths).
+    pub workspace_config_path: Option<std::path::PathBuf>,
 }
 
 impl Config {

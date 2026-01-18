@@ -29,25 +29,44 @@ pub struct Scanner {
 
 impl Scanner {
     fn load_workspace_config(packages_dir: &Path) -> Option<WorkspaceConfig> {
-        let workspace_toml = packages_dir.parent()?.join("polykit.toml");
-        if !workspace_toml.exists() {
-            return None;
+        let mut current_dir = packages_dir.parent()?;
+
+        loop {
+            let workspace_toml = current_dir.join("polykit.toml");
+            if workspace_toml.exists() {
+                let content = std::fs::read_to_string(&workspace_toml).ok()?;
+                let mut table: toml::Value = toml::from_str(&content).ok()?;
+                let workspace_table = table.get_mut("workspace")?.as_table_mut()?;
+
+                return Some(WorkspaceConfig {
+                    cache_dir: workspace_table
+                        .get("cache_dir")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    default_parallel: workspace_table
+                        .get("default_parallel")
+                        .and_then(|v| v.as_integer())
+                        .map(|i| i as usize),
+                    workspace_config_path: Some(workspace_toml),
+                });
+            }
+
+            if current_dir.join(".git").exists() {
+                break;
+            }
+
+            match current_dir.parent() {
+                Some(parent) => {
+                    if parent == current_dir {
+                        break;
+                    }
+                    current_dir = parent;
+                }
+                None => break,
+            }
         }
 
-        let content = std::fs::read_to_string(&workspace_toml).ok()?;
-        let mut table: toml::Value = toml::from_str(&content).ok()?;
-        let workspace_table = table.get_mut("workspace")?.as_table_mut()?;
-
-        Some(WorkspaceConfig {
-            cache_dir: workspace_table
-                .get("cache_dir")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            default_parallel: workspace_table
-                .get("default_parallel")
-                .and_then(|v| v.as_integer())
-                .map(|i| i as usize),
-        })
+        None
     }
 
     pub fn new(packages_dir: impl AsRef<Path>) -> Self {
@@ -63,11 +82,20 @@ impl Scanner {
     pub fn with_default_cache(packages_dir: impl AsRef<Path>) -> Self {
         let packages_dir = packages_dir.as_ref().to_path_buf();
         let workspace_config = Self::load_workspace_config(&packages_dir);
-        let cache_dir = workspace_config
-            .as_ref()
-            .and_then(|wc| wc.cache_dir.as_ref())
-            .map(PathBuf::from)
-            .unwrap_or_else(get_default_cache_dir);
+        let cache_dir = workspace_config.as_ref().and_then(|wc| {
+            wc.cache_dir.as_ref().map(|cache_dir_str| {
+                let cache_path = PathBuf::from(cache_dir_str);
+                if cache_path.is_absolute() {
+                    cache_path
+                } else {
+                    wc.workspace_config_path
+                        .as_ref()
+                        .and_then(|config_path| config_path.parent())
+                        .map(|config_dir| config_dir.join(&cache_path))
+                        .unwrap_or_else(|| PathBuf::from(cache_dir_str))
+                }
+            })
+        }).unwrap_or_else(get_default_cache_dir);
         Self {
             packages_dir,
             cache: Some(Cache::new(cache_dir)),
@@ -87,6 +115,10 @@ impl Scanner {
 
     pub fn workspace_config(&self) -> Option<&WorkspaceConfig> {
         self.workspace_config.as_ref()
+    }
+
+    pub fn cache_stats(&self) -> Option<&crate::cache::CacheStats> {
+        self.cache.as_ref().map(|c| c.stats())
     }
 
     pub fn scan(&mut self) -> Result<Vec<Package>> {

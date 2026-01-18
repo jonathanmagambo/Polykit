@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::package::Package;
 
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
+const MAX_SCAN_DEPTH: usize = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CacheEntry {
@@ -118,27 +119,47 @@ impl Cache {
 
     fn collect_mtimes(&self, packages_dir: &Path) -> Result<HashMap<PathBuf, u64>> {
         let mut mtimes = HashMap::new();
+        let mut package_dirs = std::collections::HashSet::new();
 
         for entry in walkdir::WalkDir::new(packages_dir)
-            .max_depth(2)
+            .max_depth(MAX_SCAN_DEPTH)
             .into_iter()
             .filter_map(|e| e.ok())
         {
+            let path = entry.path();
             if entry.file_name() == "polykit.toml" {
                 if let Ok(metadata) = entry.metadata() {
                     if let Ok(mtime) = metadata.modified() {
                         if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
-                            let relative_path = entry
-                                .path()
+                            let relative_path = path
                                 .strip_prefix(packages_dir)
-                                .unwrap_or(entry.path())
+                                .unwrap_or(path)
                                 .to_path_buf();
                             mtimes.insert(relative_path, duration.as_secs());
                         }
                     }
                 }
+                if let Some(package_dir) = path.parent() {
+                    if let Ok(metadata) = package_dir.metadata() {
+                        if let Ok(mtime) = metadata.modified() {
+                            if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
+                                let relative_dir = package_dir
+                                    .strip_prefix(packages_dir)
+                                    .unwrap_or(package_dir)
+                                    .to_path_buf();
+                                package_dirs.insert(relative_dir.clone());
+                                // Use a special key format to distinguish directories
+                                let dir_key = relative_dir.join(".dir");
+                                mtimes.insert(dir_key, duration.as_secs());
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        let package_count_key = PathBuf::from(".package_count");
+        mtimes.insert(package_count_key, package_dirs.len() as u64);
 
         Ok(mtimes)
     }

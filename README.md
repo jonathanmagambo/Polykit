@@ -19,7 +19,7 @@
 
 Polykit is a production-grade monorepo orchestration tool written in Rust. It manages cross-language dependencies, executes tasks in dependency order, and handles semantic versioning across your entire monorepo.
 
-**Think of Polykit as the brain that orchestrates your monorepo—it doesn't manage dependencies, it orchestrates them.**
+**Think of Polykit as the brain that orchestrates your monorepo: it doesn't manage dependencies, it orchestrates them.**
 
 <h1 align="center">Goals</h1>
 
@@ -91,7 +91,7 @@ polykit watch build
 - **Go** Detects `go.mod` (no version bumps)
 - **Rust** Reads `Cargo.toml`, bumps `package.version`
 
-Language adapters are pluggable—add support for any language by implementing the `LanguageAdapter` trait.
+Language adapters are pluggable: add support for any language by implementing the `LanguageAdapter` trait.
 
 <h1 align="center">Configuration</h1>
 
