@@ -74,13 +74,13 @@ impl LanguageAdapter for GoAdapter {
         })?;
 
         let tag_name = format!("v{}", new_version);
+        let sig = repo.signature().unwrap_or_else(|_| {
+            git2::Signature::now("Polykit", "polykit@localhost").unwrap()
+        });
         repo.tag(
             &tag_name,
             commit.as_object(),
-            &repo.signature().map_err(|e| Error::Adapter {
-                package: package_name.to_string(),
-                message: format!("Failed to get signature: {}", e),
-            })?,
+            &sig,
             &format!("Release version {}", new_version),
             false,
         )
