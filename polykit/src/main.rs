@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use polykit_core::release::BumpType;
+use polykit_core::Scanner;
 use tracing::Level;
 
 #[derive(Parser)]
@@ -22,6 +23,12 @@ struct Cli {
 
     #[arg(short, long, action)]
     quiet: bool,
+
+    #[arg(long, action)]
+    no_cache: bool,
+
+    #[arg(long, action)]
+    no_stream: bool,
 }
 
 #[derive(Subcommand)]
@@ -73,6 +80,12 @@ enum Commands {
         #[arg(long, action)]
         json: bool,
     },
+    Watch {
+        task: String,
+        packages: Vec<String>,
+        #[arg(long)]
+        debounce: Option<u64>,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Copy)]
@@ -107,30 +120,70 @@ fn main() -> Result<()> {
 
     tracing_subscriber::fmt().with_max_level(log_level).init();
 
+    let scanner = if cli.no_cache {
+        Scanner::new(&cli.packages_dir)
+    } else {
+        Scanner::with_default_cache(&cli.packages_dir)
+    };
+    let workspace_config = scanner.workspace_config();
+
     match cli.command {
-        Commands::Scan { json } => commands::cmd_scan(cli.packages_dir, json)?,
-        Commands::Graph { json } => commands::cmd_graph(cli.packages_dir, json)?,
+        Commands::Scan { json } => commands::cmd_scan(cli.packages_dir, json, cli.no_cache)?,
+        Commands::Graph { json } => commands::cmd_graph(cli.packages_dir, json, cli.no_cache)?,
         Commands::Affected { files, git, base } => {
-            commands::cmd_affected(cli.packages_dir, files, git, base)?
+            commands::cmd_affected(cli.packages_dir, files, git, base, cli.no_cache)?
         }
         Commands::Build {
             packages,
             parallel,
             continue_on_error,
-        } => commands::cmd_build(cli.packages_dir, packages, parallel, continue_on_error)?,
+        } => {
+            let parallel = parallel.or_else(|| workspace_config.and_then(|wc| wc.default_parallel));
+            commands::cmd_build(
+                cli.packages_dir,
+                packages,
+                parallel,
+                continue_on_error,
+                cli.no_cache,
+                cli.no_stream,
+            )?
+        }
         Commands::Test {
             packages,
             parallel,
             continue_on_error,
-        } => commands::cmd_test(cli.packages_dir, packages, parallel, continue_on_error)?,
+        } => {
+            let parallel = parallel.or_else(|| workspace_config.and_then(|wc| wc.default_parallel));
+            commands::cmd_test(
+                cli.packages_dir,
+                packages,
+                parallel,
+                continue_on_error,
+                cli.no_cache,
+                cli.no_stream,
+            )?
+        }
         Commands::Release {
             package,
             bump,
             dry_run,
-        } => commands::cmd_release(cli.packages_dir, package, bump.into(), dry_run)?,
-        Commands::Why { package } => commands::cmd_why(cli.packages_dir, package)?,
-        Commands::Validate { json } => commands::cmd_validate(cli.packages_dir, json)?,
-        Commands::List { json } => commands::cmd_list(cli.packages_dir, json)?,
+        } => commands::cmd_release(
+            cli.packages_dir,
+            package,
+            bump.into(),
+            dry_run,
+            cli.no_cache,
+        )?,
+        Commands::Why { package } => commands::cmd_why(cli.packages_dir, package, cli.no_cache)?,
+        Commands::Validate { json } => {
+            commands::cmd_validate(cli.packages_dir, json, cli.no_cache)?
+        }
+        Commands::List { json } => commands::cmd_list(cli.packages_dir, json, cli.no_cache)?,
+        Commands::Watch {
+            task,
+            packages,
+            debounce,
+        } => commands::cmd_watch(cli.packages_dir, task, packages, debounce, cli.no_cache)?,
     }
 
     Ok(())

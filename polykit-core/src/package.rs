@@ -49,6 +49,8 @@ impl Language {
 pub struct Task {
     pub name: String,
     pub command: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 /// Represents a package in the monorepo.

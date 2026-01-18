@@ -22,6 +22,7 @@ petgraph.workspace = true
 serde_json.workspace = true
 owo-colors.workspace = true
 indicatif.workspace = true
+ctrlc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

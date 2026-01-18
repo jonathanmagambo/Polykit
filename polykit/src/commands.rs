@@ -8,10 +8,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use polykit_adapters::get_adapter;
 use polykit_core::release::BumpType;
-use polykit_core::{ChangeDetector, DependencyGraph, ReleaseEngine, Scanner, TaskRunner};
+use polykit_core::{
+    ChangeDetector, DependencyGraph, FileWatcher, ReleaseEngine, Scanner, TaskRunner, WatcherConfig,
+};
 
-pub fn cmd_scan(packages_dir: PathBuf, json: bool) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+pub fn cmd_scan(packages_dir: PathBuf, json: bool, no_cache: bool) -> Result<()> {
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let packages = scanner.scan()?;
 
     if json {
@@ -44,8 +50,12 @@ pub fn cmd_scan(packages_dir: PathBuf, json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn cmd_graph(packages_dir: PathBuf, json: bool) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+pub fn cmd_graph(packages_dir: PathBuf, json: bool, no_cache: bool) -> Result<()> {
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let packages = scanner.scan()?;
     let graph = DependencyGraph::new(packages)?;
 
@@ -91,8 +101,13 @@ pub fn cmd_affected(
     files: Vec<String>,
     git: bool,
     base: Option<String>,
+    no_cache: bool,
 ) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let packages = scanner.scan()?;
     let graph = DependencyGraph::new(packages)?;
 
@@ -134,9 +149,15 @@ pub fn cmd_build(
     packages: Vec<String>,
     parallel: Option<usize>,
     continue_on_error: bool,
+    no_cache: bool,
+    no_stream: bool,
 ) -> Result<()> {
     let start = Instant::now();
-    let mut scanner = Scanner::new(&packages_dir);
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let scanned = scanner.scan()?;
     let graph = DependencyGraph::new(scanned)?;
 
@@ -166,9 +187,30 @@ pub fn cmd_build(
 
     let runner = TaskRunner::new(&packages_dir, graph).with_max_parallel(parallel);
 
-    let results = runner.run_task("build", packages_opt)?;
-
-    pb.finish_and_clear();
+    let results = if no_stream {
+        let results = runner.run_task("build", packages_opt)?;
+        pb.finish_and_clear();
+        results
+    } else {
+        use std::sync::{Arc, Mutex};
+        let pb = Arc::new(Mutex::new(pb));
+        let pb_clone = Arc::clone(&pb);
+        let results = runner.run_task_streaming(
+            "build",
+            packages_opt,
+            move |package_name, line, is_stderr| {
+                let prefix = format!("[{}] ", package_name);
+                if is_stderr {
+                    eprintln!("{}{}", prefix.bright_black(), line.bright_red());
+                } else {
+                    println!("{}{}", prefix.bright_black(), line);
+                }
+                pb_clone.lock().unwrap().tick();
+            },
+        )?;
+        pb.lock().unwrap().finish_and_clear();
+        results
+    };
 
     println!("{}", "[Build Results]".bold().cyan());
     println!();
@@ -234,9 +276,15 @@ pub fn cmd_test(
     packages: Vec<String>,
     parallel: Option<usize>,
     continue_on_error: bool,
+    no_cache: bool,
+    no_stream: bool,
 ) -> Result<()> {
     let start = Instant::now();
-    let mut scanner = Scanner::new(&packages_dir);
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let scanned = scanner.scan()?;
     let graph = DependencyGraph::new(scanned)?;
 
@@ -266,9 +314,30 @@ pub fn cmd_test(
 
     let runner = TaskRunner::new(&packages_dir, graph).with_max_parallel(parallel);
 
-    let results = runner.run_task("test", packages_opt)?;
-
-    pb.finish_and_clear();
+    let results = if no_stream {
+        let results = runner.run_task("test", packages_opt)?;
+        pb.finish_and_clear();
+        results
+    } else {
+        use std::sync::{Arc, Mutex};
+        let pb = Arc::new(Mutex::new(pb));
+        let pb_clone = Arc::clone(&pb);
+        let results = runner.run_task_streaming(
+            "test",
+            packages_opt,
+            move |package_name, line, is_stderr| {
+                let prefix = format!("[{}] ", package_name);
+                if is_stderr {
+                    eprintln!("{}{}", prefix.bright_black(), line.bright_red());
+                } else {
+                    println!("{}{}", prefix.bright_black(), line);
+                }
+                pb_clone.lock().unwrap().tick();
+            },
+        )?;
+        pb.lock().unwrap().finish_and_clear();
+        results
+    };
 
     println!("{}", "[Test Results]".bold().cyan());
     println!();
@@ -334,8 +403,13 @@ pub fn cmd_release(
     package: String,
     bump_type: BumpType,
     dry_run: bool,
+    no_cache: bool,
 ) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let scanned = scanner.scan()?;
     let graph = DependencyGraph::new(scanned)?;
 
@@ -406,8 +480,12 @@ pub fn cmd_release(
     Ok(())
 }
 
-pub fn cmd_why(packages_dir: PathBuf, package: String) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+pub fn cmd_why(packages_dir: PathBuf, package: String, no_cache: bool) -> Result<()> {
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let scanned = scanner.scan()?;
     let graph = DependencyGraph::new(scanned)?;
 
@@ -450,8 +528,12 @@ pub fn cmd_why(packages_dir: PathBuf, package: String) -> Result<()> {
     Ok(())
 }
 
-pub fn cmd_validate(packages_dir: PathBuf, json: bool) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+pub fn cmd_validate(packages_dir: PathBuf, json: bool, no_cache: bool) -> Result<()> {
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let packages = scanner.scan()?;
     let _ = DependencyGraph::new(packages)?;
 
@@ -469,8 +551,12 @@ pub fn cmd_validate(packages_dir: PathBuf, json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn cmd_list(packages_dir: PathBuf, json: bool) -> Result<()> {
-    let mut scanner = Scanner::new(&packages_dir);
+pub fn cmd_list(packages_dir: PathBuf, json: bool, no_cache: bool) -> Result<()> {
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
     let packages = scanner.scan()?;
 
     if json {
@@ -501,6 +587,104 @@ pub fn cmd_list(packages_dir: PathBuf, json: bool) -> Result<()> {
                 println!();
             }
         }
+    }
+
+    Ok(())
+}
+
+pub fn cmd_watch(
+    packages_dir: PathBuf,
+    task: String,
+    packages: Vec<String>,
+    debounce_ms: Option<u64>,
+    no_cache: bool,
+) -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = Arc::clone(&running);
+
+    ctrlc::set_handler(move || {
+        running_clone.store(false, Ordering::SeqCst);
+    })
+    .map_err(|e| anyhow::anyhow!("Failed to set signal handler: {}", e))?;
+
+    let mut scanner = if no_cache {
+        Scanner::new(&packages_dir)
+    } else {
+        Scanner::with_default_cache(&packages_dir)
+    };
+
+    let mut last_run = Instant::now();
+    let debounce_duration = Duration::from_millis(debounce_ms.unwrap_or(300));
+
+    println!("{}", "[Watch Mode]".bold().cyan());
+    println!("  Watching for changes in: {}", packages_dir.display());
+    println!("  Task: {}", task.bold());
+    if !packages.is_empty() {
+        println!("  Packages: {}", packages.join(", ").bold());
+    }
+    println!("  Press Ctrl+C to stop");
+    println!();
+
+    let watcher_config = WatcherConfig {
+        packages_dir: packages_dir.clone(),
+        debounce_ms: debounce_ms.unwrap_or(300),
+    };
+
+    let mut watcher = FileWatcher::new(watcher_config)?;
+    let mut last_affected = std::collections::HashSet::new();
+
+    loop {
+        if !running.load(Ordering::SeqCst) {
+            println!("\n{}", "Stopping watch mode...".yellow());
+            break;
+        }
+
+        if let Ok(Some(event)) = watcher.next_event() {
+            let affected = watcher.get_affected_packages(&event);
+            if !affected.is_empty() {
+                last_affected.extend(affected);
+                if last_run.elapsed() >= debounce_duration {
+                    let packages_to_run = if packages.is_empty() {
+                        None
+                    } else {
+                        Some(packages.as_slice())
+                    };
+
+                    println!("{}", "[Change detected, rebuilding...]".bold().yellow());
+                    let scanned = scanner.scan()?;
+                    let graph = DependencyGraph::new(scanned)?;
+
+                    let runner = TaskRunner::new(&packages_dir, graph);
+                    let results = runner.run_task(&task, packages_to_run)?;
+
+                    let mut failed = false;
+                    for result in results {
+                        if !result.success {
+                            println!(
+                                "  {} {}",
+                                "FAILED".red(),
+                                result.package_name.to_string().bold().red()
+                            );
+                            failed = true;
+                        }
+                    }
+
+                    if !failed {
+                        println!("  {} Rebuild complete", "OK".green());
+                    }
+                    println!();
+
+                    last_affected.clear();
+                    last_run = Instant::now();
+                }
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
     }
 
     Ok(())

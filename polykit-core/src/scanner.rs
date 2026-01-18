@@ -7,9 +7,15 @@ use rayon::prelude::*;
 use walkdir::WalkDir;
 
 use crate::cache::Cache;
-use crate::config::Config;
+use crate::config::{Config, WorkspaceConfig};
 use crate::error::Result;
 use crate::package::Package;
+
+fn get_default_cache_dir() -> std::path::PathBuf {
+    dirs::cache_dir()
+        .map(|d| d.join("polykit"))
+        .unwrap_or_else(|| std::env::temp_dir().join("polykit-cache"))
+}
 
 /// Scans a directory for packages.
 ///
@@ -18,21 +24,69 @@ use crate::package::Package;
 pub struct Scanner {
     packages_dir: PathBuf,
     cache: Option<Cache>,
+    workspace_config: Option<WorkspaceConfig>,
 }
 
 impl Scanner {
+    fn load_workspace_config(packages_dir: &Path) -> Option<WorkspaceConfig> {
+        let workspace_toml = packages_dir.parent()?.join("polykit.toml");
+        if !workspace_toml.exists() {
+            return None;
+        }
+
+        let content = std::fs::read_to_string(&workspace_toml).ok()?;
+        let mut table: toml::Value = toml::from_str(&content).ok()?;
+        let workspace_table = table.get_mut("workspace")?.as_table_mut()?;
+
+        Some(WorkspaceConfig {
+            cache_dir: workspace_table
+                .get("cache_dir")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            default_parallel: workspace_table
+                .get("default_parallel")
+                .and_then(|v| v.as_integer())
+                .map(|i| i as usize),
+        })
+    }
+
     pub fn new(packages_dir: impl AsRef<Path>) -> Self {
+        let packages_dir = packages_dir.as_ref().to_path_buf();
+        let workspace_config = Self::load_workspace_config(&packages_dir);
         Self {
-            packages_dir: packages_dir.as_ref().to_path_buf(),
+            packages_dir,
             cache: None,
+            workspace_config,
+        }
+    }
+
+    pub fn with_default_cache(packages_dir: impl AsRef<Path>) -> Self {
+        let packages_dir = packages_dir.as_ref().to_path_buf();
+        let workspace_config = Self::load_workspace_config(&packages_dir);
+        let cache_dir = workspace_config
+            .as_ref()
+            .and_then(|wc| wc.cache_dir.as_ref())
+            .map(PathBuf::from)
+            .unwrap_or_else(get_default_cache_dir);
+        Self {
+            packages_dir,
+            cache: Some(Cache::new(cache_dir)),
+            workspace_config,
         }
     }
 
     pub fn with_cache(packages_dir: impl AsRef<Path>, cache_dir: impl AsRef<Path>) -> Self {
+        let packages_dir = packages_dir.as_ref().to_path_buf();
+        let workspace_config = Self::load_workspace_config(&packages_dir);
         Self {
-            packages_dir: packages_dir.as_ref().to_path_buf(),
+            packages_dir,
             cache: Some(Cache::new(cache_dir)),
+            workspace_config,
         }
+    }
+
+    pub fn workspace_config(&self) -> Option<&WorkspaceConfig> {
+        self.workspace_config.as_ref()
     }
 
     pub fn scan(&mut self) -> Result<Vec<Package>> {

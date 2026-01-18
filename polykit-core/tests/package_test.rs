@@ -11,6 +11,7 @@ fn test_package_creation() {
         vec![Task {
             name: "build".to_string(),
             command: "cargo build".to_string(),
+            depends_on: Vec::new(),
         }],
     );
 
@@ -33,10 +34,12 @@ fn test_get_task() {
             Task {
                 name: "build".to_string(),
                 command: "cargo build".to_string(),
+                depends_on: Vec::new(),
             },
             Task {
                 name: "test".to_string(),
                 command: "cargo test".to_string(),
+                depends_on: Vec::new(),
             },
         ],
     );
