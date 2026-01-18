@@ -12,7 +12,7 @@
   <strong>Fast, language-agnostic monorepo orchestration.</strong>
   <br><br>
   
-  [![Build Status](https://github.com/jonathanmagambo/Polykit/workflows/rust.yml/badge.svg)](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml)
+  [![Status](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml/badge.svg)](https://github.com/jonathanmagambo/Polykit/actions/workflows/rust.yml)
 </div>
 
 <h1 align="center">What is Polykit?</h1>
